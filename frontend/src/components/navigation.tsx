@@ -31,7 +31,9 @@ export function Navigation({ currentPage, onNavigate }: NavigationProps) {
               className="text-2xl font-black tracking-tight"
               whileHover={{ scale: 1.02 }}
             >
-              CRYPTOLOTTO
+              {/* CRYPTOLOTTO */}
+              {/* find the logo in public folder */}
+              <img src="/tfl.png" alt="tfl Preview" className="md:h-12 h-8"/>
             </motion.button>
             
             <div className="hidden md:flex items-center gap-8">
@@ -71,13 +73,13 @@ export function Navigation({ currentPage, onNavigate }: NavigationProps) {
           </div>
 
           {account ? (
-            <div className="flex items-center gap-3">
-              <div className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-full">
+            <div className="flex items-center gap-2 md:gap-3">
+              <div className="px-4 py-2 md:px-6 md:py-3 bg-zinc-900 border border-zinc-800 rounded-full">
                 <span className="text-sm font-mono text-zinc-300">{formatAddress(account)}</span>
               </div>
               <motion.button
                 onClick={disconnect}
-                className="flex items-center gap-2 px-4 py-2 border border-zinc-700 text-white rounded-full hover:bg-zinc-900 transition-colors"
+                className="flex items-center gap-1 md:gap-2 px-4 py-3 md:px-6 md:py-3 border border-zinc-700 text-white rounded-full hover:bg-zinc-900 transition-colors"
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
               >
@@ -88,7 +90,7 @@ export function Navigation({ currentPage, onNavigate }: NavigationProps) {
             <motion.button
               onClick={connect}
               disabled={isConnecting}
-              className="flex items-center gap-2 px-6 py-3 bg-white text-black font-semibold rounded-full hover:bg-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-1 md:gap-2 px-4 py-2 md:px-6 md:py-3 bg-white text-black font-semibold rounded-full hover:bg-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >
