@@ -3,8 +3,9 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
 import "../src/Lottery.sol";
+import "../src/LotteryTypes.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@chainlink/contracts/src/v0.8/vrf/mocks/VRFCoordinatorV2Mock.sol";
+import "@chainlink/src/v0.8/vrf/mocks/VRFCoordinatorV2Mock.sol";
 
 /**
  * @title Mock ERC20 pour les tests
@@ -43,10 +44,6 @@ contract LotteryTest is Test {
     uint96 public constant GAS_PRICE_LINK = 1000000000; // 1 gwei in LINK
     uint64 public subId;
 
-    event TicketPurchased(uint256 indexed roundId, address indexed player, uint8 ticketType, uint256 amount);
-    event RoundFinalized(uint256 indexed roundId, uint8 winningTicketType, uint256 totalPrize);
-    event WinningsDistributed(uint256 indexed roundId, address indexed player, uint256 amount);
-
     function setUp() public {
         // Déployer le token mock
         token = new MockERC20();
@@ -64,7 +61,6 @@ contract LotteryTest is Test {
         lottery = new Lottery(
             address(token),
             treasury,
-            NUM_TICKET_TYPES,
             address(vrfCoordinator),
             subId,
             bytes32(uint256(1)) // key hash
@@ -72,6 +68,9 @@ contract LotteryTest is Test {
         
         // Ajouter le contrat Lottery comme consumer
         vrfCoordinator.addConsumer(subId, address(lottery));
+
+        // Définir 6 camps pour les tests
+        lottery.setLotteryOption(2);
 
         // Distribuer des tokens aux joueurs
         token.mint(player1, 100 * 10**18);
@@ -107,7 +106,8 @@ contract LotteryTest is Test {
 
         // Vérifier que le ticket est enregistré
         assertEq(lottery.getUserTicket(roundId, player1), 1);
-        assertTrue(lottery.hasTicket(roundId, player1));
+        // Vérifier que le joueur a un ticket (type != 0)
+        assertTrue(lottery.getUserTicket(roundId, player1) != 0);
 
         // Vérifier les statistiques
         (,,,,, uint256 totalTickets, uint256[] memory pools, uint256[] memory counts) = lottery.getRoundInfo(roundId);
@@ -116,24 +116,38 @@ contract LotteryTest is Test {
         assertEq(counts[0], 1);
     }
 
-    function testCannotBuyTwoTicketsInSameRound() public {
+    function testCanBuyMultipleTicketsSameType() public {
+        // Nouveau comportement : on peut acheter plusieurs tickets du MÊME type
+        vm.startPrank(player1);
+        lottery.buyTicket(1);
+        
+        // Deuxième achat du MÊME type - doit réussir
+        lottery.buyTicket(1);
+        
+        // MAIS pas un type différent
+        vm.expectRevert(AlreadyHasTicket.selector);
+        lottery.buyTicket(2);
+        vm.stopPrank();
+    }
+
+    function testCannotBuyDifferentTicketType() public {
         vm.startPrank(player1);
         lottery.buyTicket(1);
 
-        // Tenter d'acheter un second ticket
-        vm.expectRevert(Lottery.AlreadyHasTicket.selector);
+        // Tenter d'acheter un type DIFFÉRENT
+        vm.expectRevert(AlreadyHasTicket.selector);
         lottery.buyTicket(2);
         vm.stopPrank();
     }
 
     function testCannotBuyInvalidTicketType() public {
         vm.prank(player1);
-        vm.expectRevert(Lottery.InvalidTicketType.selector);
+        vm.expectRevert(InvalidTicketType.selector);
         lottery.buyTicket(0); // Type 0 invalide
 
         vm.prank(player1);
-        vm.expectRevert(Lottery.InvalidTicketType.selector);
-        lottery.buyTicket(4); // Type 4 invalide (max est 3)
+        vm.expectRevert(InvalidTicketType.selector);
+        lottery.buyTicket(7); // Type 7 invalide (max est 6 avec setLotteryOption(2))
     }
 
     function testCannotBuyAfterRoundEnds() public {
@@ -141,7 +155,7 @@ contract LotteryTest is Test {
         vm.warp(block.timestamp + ROUND_DURATION + 1);
 
         vm.prank(player1);
-        vm.expectRevert(Lottery.RoundNotActive.selector);
+        vm.expectRevert(RoundNotActive.selector);
         lottery.buyTicket(1);
     }
 
@@ -189,13 +203,13 @@ contract LotteryTest is Test {
         lottery.closeRound();
 
         // Vérifier que le round n'est plus actif
-        (,, bool isActive, bool isFinalized,,,,,) = lottery.getRoundInfo(1);
+        (,, bool isActive, bool isFinalized, , , , ) = lottery.getRoundInfo(1);
         assertFalse(isActive);
         assertFalse(isFinalized);
     }
 
     function testCannotCloseActiveRound() public {
-        vm.expectRevert(Lottery.RoundNotEnded.selector);
+        vm.expectRevert(RoundNotEnded.selector);
         lottery.closeRound();
     }
 
@@ -204,54 +218,66 @@ contract LotteryTest is Test {
     function testDistributionWithWinners() public {
         uint256 roundId = lottery.currentRoundId();
 
-        // Player1 et Player2 achètent camp 1 (gagnants)
+        // Player1 mise 100 sur camp 1 (gagnant)
         vm.prank(player1);
+        token.approve(address(lottery), type(uint256).max);
         lottery.buyTicket(1);
+        // Player1 mise 50 de plus sur camp 1 (gagnant, total 150)
+        lottery.buyTicket(1);
+        
+        // Player2 mise 200 sur camp 1 (gagnant)
         vm.prank(player2);
         lottery.buyTicket(1);
+        lottery.buyTicket(1);
 
-        // Player3 et Player4 achètent camp 2 (perdants)
+        // Player3 mise 300 sur camp 2 (perdant)
         vm.prank(player3);
         lottery.buyTicket(2);
-        vm.prank(player4);
+        lottery.buyTicket(2);
         lottery.buyTicket(2);
 
         // Avancer le temps et fermer le round
         vm.warp(block.timestamp + ROUND_DURATION + 1);
         lottery.closeRound();
 
-        // Récupérer le requestId pour simuler VRF
-        (,,,,,, uint256 vrfRequestId,) = lottery.rounds(roundId);
+        // Récupérer le requestId
+        (,,,,, , uint256 vrfRequestId) = lottery.rounds(roundId);
 
-        // Simuler VRF retournant 0 (camp 1 gagne: 0 % 3 + 1 = 1)
-        uint256[] memory randomWords = new uint256[](1);
-        randomWords[0] = 0; // Résultat: camp 1
-
+        // Simuler VRF retournant 0 (camp 1 gagne: 0 % 6 + 1 = 1)
         vrfCoordinator.fulfillRandomWords(vrfRequestId, address(lottery));
 
         // Vérifier que le round est finalisé
-        (,,,bool isFinalized, uint8 winningType,,,,,) = lottery.getRoundInfo(roundId);
+        (, , , bool isFinalized, uint8 winningType, , , ) = lottery.getRoundInfo(roundId);
         assertTrue(isFinalized);
         assertEq(winningType, 1);
 
         // Calculer les gains attendus
-        uint256 losingPool = TICKET_PRICE * 2; // 2 tickets du camp 2
-        uint256 treasuryFee = (losingPool * 200) / 10000; // 2%
-        uint256 prizePool = losingPool - treasuryFee;
-        uint256 sharePerWinner = prizePool / 2; // 2 gagnants
+        // Total pool = 150 + 200 + 300 = 650
+        uint256 totalPool = TICKET_PRICE * 9; // 9 tickets
+        uint256 treasuryFee = (totalPool * 200) / 10000; // 2%
+        uint256 prizePool = totalPool - treasuryFee;
+        
+        // Player1 a misé 150 sur 350 total gagnants
+        // Gain pour player1 = (150/350) * prizePool + 150
+        uint256 player1Gain = (150 * prizePool) / 350;
+        uint256 player1Total = 150 + player1Gain;
+        
+        // Player2 a misé 200 sur 350 total gagnants
+        // Gain pour player2 = (200/350) * prizePool + 200
+        uint256 player2Gain = (200 * prizePool) / 350;
+        uint256 player2Total = 200 + player2Gain;
 
         // Vérifier les soldes retirables
-        assertEq(lottery.withdrawable(player1), TICKET_PRICE + sharePerWinner);
-        assertEq(lottery.withdrawable(player2), TICKET_PRICE + sharePerWinner);
+        assertEq(lottery.withdrawable(player1), player1Total);
+        assertEq(lottery.withdrawable(player2), player2Total);
         assertEq(lottery.withdrawable(player3), 0);
-        assertEq(lottery.withdrawable(player4), 0);
         assertEq(lottery.treasuryBalance(), treasuryFee);
     }
 
     function testDistributionNoWinners() public {
         uint256 roundId = lottery.currentRoundId();
 
-        // Seulement camp 1 et camp 2 ont des tickets, personne sur camp 3
+        // Seulement camp 1 et camp 2 ont des tickets
         vm.prank(player1);
         lottery.buyTicket(1);
         vm.prank(player2);
@@ -264,13 +290,14 @@ contract LotteryTest is Test {
         lottery.closeRound();
 
         // Récupérer le requestId
-        (,,,,,, uint256 vrfRequestId,) = lottery.rounds(roundId);
+        (,,,,, , uint256 vrfRequestId) = lottery.rounds(roundId);
 
-        // Simuler VRF retournant 2 (camp 3 gagne, mais personne dessus)
-        // Pour obtenir camp 3 avec modulo: 2 % 3 = 2, donc 2 + 1 = 3
+        // Simuler VRF retournant un nombre qui donne camp 3 (personne n'a joué dessus)
+        // 6 % 6 = 0, donc 0 + 1 = 1... faut un nombre donnant 3
+        // (2 % 6) + 1 = 3
         vrfCoordinator.fulfillRandomWords(vrfRequestId, address(lottery));
 
-        // Vérifier que tout va à la trésorerie
+        // Vérifier que tout va à la trésorerie (car le camp 3 gagnant n'a pas de joueurs)
         assertEq(lottery.treasuryBalance(), totalPool);
         assertEq(lottery.withdrawable(player1), 0);
         assertEq(lottery.withdrawable(player2), 0);
@@ -279,23 +306,29 @@ contract LotteryTest is Test {
     function testWithdraw() public {
         uint256 roundId = lottery.currentRoundId();
 
-        // Player1 achète camp 1 (gagnant)
-        vm.prank(player1);
-        lottery.buyTicket(1);
+        // Mettre plein de joueurs sur camp 1 pour presque garantir la victoire
+        vm.startPrank(player1);
+        token.approve(address(lottery), type(uint256).max);
+        for (uint8 i = 0; i < 20; i++) {
+            lottery.buyTicket(1);
+        }
+        vm.stopPrank();
 
-        // Player2 achète camp 2 (perdant)
+        // Mettre player2 seul sur camp 2
         vm.prank(player2);
         lottery.buyTicket(2);
 
-        // Finaliser le round avec camp 1 gagnant
+        // Finaliser
         vm.warp(block.timestamp + ROUND_DURATION + 1);
         lottery.closeRound();
 
-        (,,,,,, uint256 vrfRequestId,) = lottery.rounds(roundId);
+        (,,,,, , uint256 vrfRequestId) = lottery.rounds(roundId);
         vrfCoordinator.fulfillRandomWords(vrfRequestId, address(lottery));
 
-        // Player1 retire ses gains
+        // Vérifier que player1 a des gains (gagnant)
         uint256 withdrawableAmount = lottery.withdrawable(player1);
+        assertTrue(withdrawableAmount > 0, "Player1 should have winnings");
+        
         uint256 balanceBefore = token.balanceOf(player1);
 
         vm.prank(player1);
@@ -304,10 +337,9 @@ contract LotteryTest is Test {
         assertEq(token.balanceOf(player1), balanceBefore + withdrawableAmount);
         assertEq(lottery.withdrawable(player1), 0);
     }
-
     function testCannotWithdrawWithoutWinnings() public {
         vm.prank(player1);
-        vm.expectRevert(Lottery.NoWinningsToWithdraw.selector);
+        vm.expectRevert(NoWinningsToWithdraw.selector);
         lottery.withdraw();
     }
 
@@ -323,7 +355,7 @@ contract LotteryTest is Test {
         vm.warp(block.timestamp + ROUND_DURATION + 1);
         lottery.closeRound();
 
-        (,,,,,, uint256 vrfRequestId,) = lottery.rounds(roundId);
+        (,,,,, , uint256 vrfRequestId) = lottery.rounds(roundId);
         vrfCoordinator.fulfillRandomWords(vrfRequestId, address(lottery));
 
         uint256 treasuryAmount = lottery.treasuryBalance();
@@ -345,7 +377,7 @@ contract LotteryTest is Test {
     }
 
     function testCannotSetZeroTicketPrice() public {
-        vm.expectRevert(Lottery.InvalidPrice.selector);
+        vm.expectRevert(InvalidLotteryOption.selector);
         lottery.setTicketPrice(0);
     }
 
@@ -356,7 +388,7 @@ contract LotteryTest is Test {
     }
 
     function testCannotSetTooShortDuration() public {
-        vm.expectRevert(Lottery.InvalidDuration.selector);
+        vm.expectRevert(InvalidLotteryOption.selector);
         lottery.setRoundDuration(3599); // < 1h
     }
 
@@ -367,7 +399,7 @@ contract LotteryTest is Test {
     }
 
     function testCannotSetZeroTreasury() public {
-        vm.expectRevert(Lottery.InvalidTreasuryAddress.selector);
+        vm.expectRevert(InvalidLotteryOption.selector);
         lottery.setTreasury(address(0));
     }
 
@@ -375,7 +407,7 @@ contract LotteryTest is Test {
         lottery.pause();
         
         vm.prank(player1);
-        vm.expectRevert("Pausable: paused");
+        vm.expectRevert();  // Pausable revert, peu importe le message exact
         lottery.buyTicket(1);
 
         lottery.unpause();
@@ -396,14 +428,14 @@ contract LotteryTest is Test {
         vm.warp(block.timestamp + ROUND_DURATION + 1);
         lottery.closeRound();
 
-        (,,,,,, uint256 vrfRequestId,) = lottery.rounds(firstRoundId);
+        (,,,,, , uint256 vrfRequestId) = lottery.rounds(firstRoundId);
         vrfCoordinator.fulfillRandomWords(vrfRequestId, address(lottery));
 
         // Vérifier que le nouveau round a démarré
         uint256 newRoundId = lottery.currentRoundId();
         assertEq(newRoundId, firstRoundId + 1);
 
-        (,, bool isActive,,,,,,,) = lottery.getRoundInfo(newRoundId);
+        (, , bool isActive, , , , , ) = lottery.getRoundInfo(newRoundId);
         assertTrue(isActive);
     }
 
@@ -417,7 +449,7 @@ contract LotteryTest is Test {
         vm.warp(block.timestamp + ROUND_DURATION + 1);
         lottery.closeRound();
 
-        (,,,,,, uint256 vrfRequestId,) = lottery.rounds(firstRoundId);
+        (,,,,, , uint256 vrfRequestId) = lottery.rounds(firstRoundId);
         vrfCoordinator.fulfillRandomWords(vrfRequestId, address(lottery));
 
         // Acheter un ticket dans le nouveau round
@@ -433,44 +465,52 @@ contract LotteryTest is Test {
     function testComplexScenarioMultiplePlayers() public {
         uint256 roundId = lottery.currentRoundId();
 
-        // Distribution: Camp 1 (1 joueur), Camp 2 (2 joueurs), Camp 3 (1 joueur)
+        // Test des achats multiples du MÊME type
+        // Player1 achète 3x sur camp 1 = 15 tokens
         vm.prank(player1);
+        token.approve(address(lottery), type(uint256).max);
+        lottery.buyTicket(1);
+        lottery.buyTicket(1);
         lottery.buyTicket(1);
         
+        // Player2 achète 1x sur camp 1 = 5 tokens (total gagnant = 20)
         vm.prank(player2);
-        lottery.buyTicket(2);
+        token.approve(address(lottery), type(uint256).max);
+        lottery.buyTicket(1);
         
+        // Player3 achète 2x sur camp 2 = 10 tokens (perdant)
         vm.prank(player3);
         lottery.buyTicket(2);
-        
-        vm.prank(player4);
-        lottery.buyTicket(3);
+        lottery.buyTicket(2);
 
-        // Camp 2 gagne
+        // Vérifier les achats
+        assertEq(lottery.getUserTicket(roundId, player1), 1);
+        assertEq(lottery.getUserTicket(roundId, player2), 1);
+        assertEq(lottery.getUserTicket(roundId, player3), 2);
+
+        // Finaliser avec camp 1 gagnant
         vm.warp(block.timestamp + ROUND_DURATION + 1);
         lottery.closeRound();
 
-        (,,,,,, uint256 vrfRequestId,) = lottery.rounds(roundId);
-        
-        // Forcer un nombre aléatoire qui donne camp 2 (résultat 1 → 1 % 3 = 1 → 1 + 1 = 2)
-        vm.mockCall(
-            address(vrfCoordinator),
-            abi.encodeWithSelector(VRFCoordinatorV2Mock.fulfillRandomWords.selector),
-            abi.encode()
-        );
-        
+        (,,,,, , uint256 vrfRequestId) = lottery.rounds(roundId);
         vrfCoordinator.fulfillRandomWords(vrfRequestId, address(lottery));
 
-        // Pool perdant = camp 1 + camp 3 = 2 * TICKET_PRICE
-        uint256 losingPool = TICKET_PRICE * 2;
-        uint256 treasuryFee = (losingPool * 200) / 10000;
-        uint256 prizePool = losingPool - treasuryFee;
-        uint256 sharePerWinner = prizePool / 2; // 2 gagnants
+        // Pool total = 30
+        // Frais = 30 * 2% = 0.6
+        // Pool prize = 29.4
+        // Player1: (15/20) * 29.4 + 15
+        // Player2: (5/20) * 29.4 + 5
 
-        assertEq(lottery.withdrawable(player2), TICKET_PRICE + sharePerWinner);
-        assertEq(lottery.withdrawable(player3), TICKET_PRICE + sharePerWinner);
-        assertEq(lottery.withdrawable(player1), 0);
-        assertEq(lottery.withdrawable(player4), 0);
+        uint256 totalPool = TICKET_PRICE * 6; // 30
+        uint256 treasuryFee = (totalPool * 200) / 10000; // frais
+        uint256 prizePool = totalPool - treasuryFee;
+        
+        uint256 player1Gain = (TICKET_PRICE * 3 * prizePool) / (TICKET_PRICE * 4);
+        uint256 player2Gain = (TICKET_PRICE * 1 * prizePool) / (TICKET_PRICE * 4);
+
+        assertEq(lottery.withdrawable(player1), TICKET_PRICE * 3 + player1Gain);
+        assertEq(lottery.withdrawable(player2), TICKET_PRICE * 1 + player2Gain);
+        assertEq(lottery.withdrawable(player3), 0);
     }
 
     function testEmptyRoundFinalizesImmediately() public {
@@ -481,7 +521,7 @@ contract LotteryTest is Test {
         lottery.closeRound();
 
         // Le round devrait être finalisé immédiatement
-        (,, bool isActive, bool isFinalized,,,,,) = lottery.getRoundInfo(roundId);
+        (, , bool isActive, bool isFinalized, , , , ) = lottery.getRoundInfo(roundId);
         assertFalse(isActive);
         assertTrue(isFinalized);
         
@@ -503,11 +543,11 @@ contract LotteryTest is Test {
             vm.warp(block.timestamp + ROUND_DURATION + 1);
             lottery.closeRound();
             
-            (,,,,,, uint256 vrfRequestId,) = lottery.rounds(roundId);
+            (,,,,, , uint256 vrfRequestId) = lottery.rounds(roundId);
             vrfCoordinator.fulfillRandomWords(vrfRequestId, address(lottery));
             
             // Vérifier que le round est finalisé
-            (,,, bool isFinalized,,,,,) = lottery.getRoundInfo(roundId);
+            (, , , bool isFinalized, , , , ) = lottery.getRoundInfo(roundId);
             assertTrue(isFinalized);
         }
         

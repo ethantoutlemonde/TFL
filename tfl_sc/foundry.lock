@@ -1,4 +1,13 @@
 {
+  "lib/chainlink": {
+    "rev": "61cf835f7a8b94862c65ac394a2c7115248f6a3f"
+  },
+  "lib/chainlink-brownie-contracts": {
+    "rev": "5cb41fbc9b525338b6098da5ea7dd0b7e92f89e4"
+  },
+  "lib/openzeppelin-contracts": {
+    "rev": "fcbae5394ae8ad52d8e580a3477db99814b9d565"
+  },
   "lib\\chainlink": {
     "tag": {
       "name": "v2.30.1",
