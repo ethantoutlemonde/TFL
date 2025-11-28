@@ -1,0 +1,9 @@
+[submodule "tfl_sc/lib/openzeppelin-contracts"]
+	path = tfl_sc/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "tfl_sc/lib/chainlink"]
+	path = tfl_sc/lib/chainlink
+	url = https://github.com/smartcontractkit/chainlink
+[submodule "tfl_sc/lib/chainlink-brownie-contracts"]
+	path = tfl_sc/lib/chainlink-brownie-contracts
+	url = https://github.com/smartcontractkit/chainlink-brownie-contracts
