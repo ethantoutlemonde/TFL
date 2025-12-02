@@ -33,7 +33,7 @@ export function Navigation({ currentPage, onNavigate }: NavigationProps) {
             >
               {/* CRYPTOLOTTO */}
               {/* find the logo in public folder */}
-              <img src="/tfl.png" alt="tfl Preview" className="md:h-12 h-8"/>
+              <img src="tfl.png" alt="tfl Preview" className="md:h-12 h-8"/>
             </motion.button>
             
             <div className="hidden md:flex items-center gap-8">
