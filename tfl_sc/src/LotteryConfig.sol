@@ -60,10 +60,10 @@ abstract contract LotteryConfig is Ownable {
     uint8 public currentNumberOfTicketTypes;
 
     // Prix d'un ticket en tokens
-    uint256 public ticketPrice = 5 * 10**18;
+    uint256 public ticketPrice = 1 * 10**18;
     
     // Durée d'un round en secondes (24h)
-    uint256 public roundDuration = 86400;
+    uint256 public roundDuration = 900;
     
     // Trésorerie
     address public treasury;
