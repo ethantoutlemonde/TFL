@@ -6,7 +6,6 @@ import { Ticket, TrendingUp, Trophy, Calendar, ExternalLink, Clock, Wallet, Aler
 import { useWallet } from '../hooks/useWallet';
 import { 
   useLotteryInfo, 
-  usePlayerAllTickets, 
   usePlayerHistoricalTickets,
   usePlayerWinnings,
   useWithdraw,
@@ -192,11 +191,8 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
   // Récupérer les infos de la loterie
   const { currentRoundId, isLoading: lotteryLoading } = useLotteryInfo();
   
-  // Récupérer le ticket du round courant
-  const { tickets: currentRoundTickets, isLoading: ticketsLoading, refetch: refetchTickets } = usePlayerAllTickets(address, currentRoundId);
-  
-  // Récupérer les tickets historiques des rounds passés
-  const { tickets: historicalTickets, isLoading: historicalLoading } = usePlayerHistoricalTickets(address, currentRoundId);
+  // Récupérer tous les tickets du joueur (courant + historiques)
+  const { tickets: allPlayerTickets, isLoading: ticketsLoading, refetch: refetchTickets } = usePlayerHistoricalTickets(address, currentRoundId);
   
   // Récupérer les gains du joueur
   const { pendingWinnings, isLoading: winningsLoading, refetch: refetchWinnings } = usePlayerWinnings(address);
@@ -218,14 +214,11 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
     }
   };
 
-  // Combiner tous les tickets
-  const allTickets = [...currentRoundTickets, ...historicalTickets];
-  
   // Filtrer les tickets actifs et passés
-  const activeTickets = allTickets.filter(t => t.roundId === currentRoundId);
-  const pastTickets = allTickets.filter(t => t.roundId < currentRoundId);
-  const totalTickets = allTickets.length;
-  const totalSpent = allTickets.reduce((sum: number, t: any) => sum + parseFloat(t.amount), 0);
+  const activeTickets = allPlayerTickets.filter((t: any) => t.roundId === currentRoundId);
+  const pastTickets = allPlayerTickets.filter((t: any) => t.roundId < currentRoundId);
+  const totalTickets = allPlayerTickets.length;
+  const totalSpent = allPlayerTickets.reduce((sum: number, t: any) => sum + parseFloat(t.amount), 0);
   const pendingWinningsNum = parseFloat(pendingWinnings);
 
   const stats = [
@@ -255,7 +248,7 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
     },
   ];
 
-  const isLoading = lotteryLoading || ticketsLoading || historicalLoading || winningsLoading;
+  const isLoading = lotteryLoading || ticketsLoading || winningsLoading;
 
   return (
     <div className="min-h-screen pt-20">
@@ -503,7 +496,7 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
               </motion.div>
 
               <div className="grid md:grid-cols-2 gap-6">
-                {pastTickets.map((ticket, index) => (
+                {pastTickets.map((ticket: any, index: number) => (
                   <PastTicketCard 
                     key={`${ticket.roundId}-${ticket.ticketType}`} 
                     ticket={ticket} 

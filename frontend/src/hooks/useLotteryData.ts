@@ -78,17 +78,29 @@ export function useLotteryInfo() {
  * Hook pour récupérer les infos d'un round spécifique
  */
 export function useRoundInfo(roundId: number) {
-  const { data, isLoading, error, refetch } = useReadContract({
+  // Récupérer les infos du round
+  const { data: roundInfoData, isLoading: roundInfoLoading, error: roundInfoError, refetch } = useReadContract({
     address: LOTTERY_ADDRESS as `0x${string}`,
     abi: LotteryABI,
     functionName: 'getRoundInfo',
     args: [BigInt(roundId)],
   });
 
+  // Récupérer le carryoverPool
+  const { data: carryoverPoolData, isLoading: carryoverLoading } = useReadContract({
+    address: LOTTERY_ADDRESS as `0x${string}`,
+    abi: LotteryABI,
+    functionName: 'carryoverPool',
+  });
+
   // Le retour de getRoundInfo() est un tuple
-  const roundData = data as [bigint, bigint, boolean, boolean, bigint, bigint, bigint[], bigint[]] | undefined;
+  const roundData = roundInfoData as [bigint, bigint, boolean, boolean, bigint, bigint, bigint[], bigint[]] | undefined;
   const poolAmounts = roundData?.[6] ?? [];
-  const totalPool = poolAmounts.reduce((acc, amount) => acc + (amount ?? 0n), 0n);
+  const totalRoundPool = poolAmounts.reduce((acc, amount) => acc + (amount ?? 0n), 0n);
+
+  // Ajouter le carryoverPool au total
+  const carryoverPool = carryoverPoolData as bigint | undefined;
+  const totalPoolWithCarryover = totalRoundPool + (carryoverPool ?? 0n);
 
   return {
     startTime: roundData?.[0] ? Number(roundData[0]) : 0,
@@ -98,11 +110,13 @@ export function useRoundInfo(roundId: number) {
     winningTicketType: roundData?.[4] ? Number(roundData[4]) : 0,
     totalTickets: roundData?.[5] ? Number(roundData[5]) : 0,
     numberOfTickets: roundData?.[5] ? Number(roundData[5]) : 0,
-    totalPool: formatUnits(totalPool, 18),
-    totalPrize: formatUnits(totalPool, 18),
+    totalRoundPool: formatUnits(totalRoundPool, 18),
+    totalPool: formatUnits(totalPoolWithCarryover, 18),
+    totalPrize: formatUnits(totalPoolWithCarryover, 18),
+    carryoverPool: formatUnits(carryoverPool ?? 0n, 18),
     poolAmounts,
-    isLoading,
-    error,
+    isLoading: roundInfoLoading || carryoverLoading,
+    error: roundInfoError,
     refetch,
   };
 }
@@ -249,6 +263,90 @@ export function usePlayerAllTickets(playerAddress: string | undefined, currentRo
     isLoading: ticketsLoading || betLoading || priceLoading, 
     error: ticketsError || betError, 
     refetch: refetchTickets_combined 
+  };
+}
+
+/**
+ * Hook pour récupérer tous les tickets d'un joueur (round courant + historiques)
+ */
+export function usePlayerHistoricalTickets(playerAddress: string | undefined, currentRoundId: number) {
+  // Récupérer le ticket du round courant
+  const currentRound = usePlayerAllTickets(playerAddress, currentRoundId);
+
+  // Récupérer le prix du ticket
+  const { data: ticketPriceData, isLoading: priceLoading } = useReadContract({
+    address: LOTTERY_ADDRESS as `0x${string}`,
+    abi: lotteryAbi,
+    functionName: 'ticketPrice',
+    query: {
+      enabled: !!playerAddress,
+      staleTime: Infinity,
+    },
+  });
+
+  const ticketPrice = ticketPriceData as bigint | undefined;
+
+  // Récupérer les tickets des rounds passés (derniers 10 rounds max)
+  const pastRoundIds = Array.from({ length: Math.min(currentRoundId - 1, 10) }, (_, i) => currentRoundId - i - 1).filter(id => id > 0);
+
+  const pastRoundContracts = pastRoundIds.map(roundId => [
+    {
+      address: LOTTERY_ADDRESS as `0x${string}`,
+      abi: lotteryAbi,
+      functionName: 'userTickets',
+      args: playerAddress ? [BigInt(roundId), playerAddress as `0x${string}`] : undefined,
+    },
+    {
+      address: LOTTERY_ADDRESS as `0x${string}`,
+      abi: lotteryAbi,
+      functionName: 'userBetAmounts',
+      args: playerAddress ? [BigInt(roundId), playerAddress as `0x${string}`] : undefined,
+    },
+  ]).flat();
+
+  const { data: pastRoundData, isLoading: pastLoading, error: pastError } = useReadContracts({
+    contracts: pastRoundContracts,
+    query: {
+      enabled: !!playerAddress && currentRoundId > 1,
+    },
+  });
+
+  // Traiter les données des rounds passés
+  const pastTickets = pastRoundIds.map((roundId, index) => {
+    const ticketTypeIndex = index * 2;
+    const betAmountIndex = index * 2 + 1;
+
+    const ticketType = pastRoundData?.[ticketTypeIndex]?.result as number | undefined;
+    const betAmount = pastRoundData?.[betAmountIndex]?.result as bigint | undefined;
+
+    if (!ticketType || ticketType === 0 || !betAmount || betAmount === 0n) {
+      return null;
+    }
+
+    // Calculer la quantité: montant total / prix unitaire
+    let quantity = 1;
+    if (betAmount && ticketPrice && ticketPrice > 0n) {
+      quantity = Number(betAmount / ticketPrice);
+    }
+
+    return {
+      roundId: roundId,
+      ticketType: ticketType,
+      quantity: quantity,
+      amount: formatUnits(betAmount, 18),
+      amountRaw: betAmount,
+      hasTicket: true,
+    };
+  }).filter(Boolean) as any[];
+
+  // Combiner les tickets actuels et passés
+  const allTickets = [...currentRound.tickets, ...pastTickets];
+
+  return {
+    tickets: allTickets,
+    isLoading: currentRound.isLoading || pastLoading || priceLoading,
+    error: currentRound.error || pastError,
+    refetch: currentRound.refetch,
   };
 }
 

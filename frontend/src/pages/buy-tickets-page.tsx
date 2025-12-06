@@ -16,8 +16,6 @@ const QUANTITIES = [
   { id: 2, name: 'Silver', multiplier: 2, emoji: '🥈' },
   { id: 3, name: 'Gold', multiplier: 5, emoji: '🥇' },
   { id: 4, name: 'Diamond', multiplier: 10, emoji: '💎' },
-  { id: 5, name: 'Platinum', multiplier: 15, emoji: '👑' },
-  { id: 6, name: 'Legend', multiplier: 20, emoji: '✨' },
 ];
 
 const CHOICE_TYPES = [
