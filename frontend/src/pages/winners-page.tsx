@@ -2,87 +2,62 @@
 
 import { motion } from "motion/react";
 import { Trophy, ExternalLink, Search, Filter } from "lucide-react";
-import { useState } from "react";
-
-const allWinners = [
-  {
-    id: 1,
-    wallet: "0x742d35Cc6634C0532925a3b844Bc9e7595f38a9f3",
-    amount: 1250.45,
-    date: "Sep 15, 2025",
-    draw: 47,
-    txHash: "0x1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z",
-  },
-  {
-    id: 2,
-    wallet: "0x8f1c29Dd4512A9532821b6c833Fc9d7584f21b2e7",
-    amount: 980.32,
-    date: "Sep 01, 2025",
-    draw: 46,
-    txHash: "0x2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a",
-  },
-  {
-    id: 3,
-    wallet: "0x3a9e47Bb2839E9123745a1d922Ae8c6391d03c4d1",
-    amount: 1567.89,
-    date: "Aug 20, 2025",
-    draw: 45,
-    txHash: "0x3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b",
-  },
-  {
-    id: 4,
-    wallet: "0x6d2f83Ee9421F8534612c4e731Bf7d4982a14e8a5",
-    amount: 2134.67,
-    date: "Aug 05, 2025",
-    draw: 44,
-    txHash: "0x4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c",
-  },
-  {
-    id: 5,
-    wallet: "0x9f2a81Bb3947E8234856c2e833Gd0e7692f14d5b2",
-    amount: 875.23,
-    date: "Jul 22, 2025",
-    draw: 43,
-    txHash: "0x5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0d",
-  },
-  {
-    id: 6,
-    wallet: "0x1b3e92Cc4058F9345967d3f944He1f8703g25f6c3",
-    amount: 1789.45,
-    date: "Jul 08, 2025",
-    draw: 42,
-    txHash: "0x6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0d1e",
-  },
-  {
-    id: 7,
-    wallet: "0x2c4f03Dd5169G0456078e4g055If2g9814h36g7d4",
-    amount: 2456.78,
-    date: "Jun 25, 2025",
-    draw: 41,
-    txHash: "0x7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0d1e2f",
-  },
-  {
-    id: 8,
-    wallet: "0x3d5g14Ee6270H1567189f5h166Jg3h0925i47h8e5",
-    amount: 1123.90,
-    date: "Jun 10, 2025",
-    draw: 40,
-    txHash: "0x8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0d1e2f3g",
-  },
-];
+import { useMemo, useState, useEffect } from "react";
+import { useWinners } from "../hooks/useLotteryData";
+import { ACTIVE_CONFIG } from "../config/contracts";
 
 export function WinnersPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterDraw, setFilterDraw] = useState("all");
 
-  const filteredWinners = allWinners.filter(winner => {
+  const { winners, isLoading, error } = useWinners(8);
+
+  // Snapshot data once loaded to avoid UI flicker/recomputes
+  const [snapshot, setSnapshot] = useState<{
+    flattened: typeof flattened;
+    draws: number[];
+    totalPrizes: number;
+    largestWin: number;
+  } | null>(null);
+
+  const flattened = useMemo(() => {
+    return winners.flatMap((round) =>
+      round.winners.map((w, idx) => ({
+        id: `${round.roundId}-${idx}`,
+        wallet: w.address,
+        amount: parseFloat(w.payoutFormatted),
+        bet: parseFloat(w.betFormatted),
+        date: round.endTime ? new Date(round.endTime * 1000).toLocaleDateString() : "",
+        draw: round.roundId,
+        winningTicketType: round.winningTicketType,
+        prizePool: round.prizePoolFormatted,
+      }))
+    );
+  }, [winners]);
+
+  const filteredWinners = (snapshot ? snapshot.flattened : flattened).filter(winner => {
     const matchesSearch = winner.wallet.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          winner.draw.toString().includes(searchTerm);
     const matchesFilter = filterDraw === "all" || winner.draw.toString() === filterDraw;
     return matchesSearch && matchesFilter;
   });
 
-  const totalPrizes = allWinners.reduce((sum, winner) => sum + winner.amount, 0);
+  const totalPrizes = flattened.reduce((sum, winner) => sum + (winner.amount || 0), 0);
+  const largestWin = flattened.reduce((max, winner) => Math.max(max, winner.amount || 0), 0);
+  const uniqueDraws = Array.from(new Set(flattened.map(w => w.draw))).sort((a, b) => b - a);
+
+  useEffect(() => {
+    if (!isLoading && !snapshot) {
+      setSnapshot({
+        flattened,
+        draws: uniqueDraws,
+        totalPrizes,
+        largestWin,
+      });
+    }
+  }, [isLoading, snapshot, flattened, uniqueDraws, totalPrizes, largestWin]);
+
+  const data = snapshot ?? { flattened: [], draws: [], totalPrizes: 0, largestWin: 0 };
 
   return (
     <div className="min-h-screen pt-20">
@@ -111,16 +86,16 @@ export function WinnersPage() {
             <div className="grid grid-cols-2 md:grid-cols-3 gap-6 max-w-4xl">
               <div className="p-6 bg-zinc-900/50 border border-zinc-800 rounded-2xl">
                 <div className="text-sm text-zinc-500 mb-2">Total Winners</div>
-                <div className="text-3xl font-black">{allWinners.length}</div>
+                <div className="text-3xl font-black">{snapshot ? data.flattened.length : "..."}</div>
               </div>
               <div className="p-6 bg-zinc-900/50 border border-zinc-800 rounded-2xl">
                 <div className="text-sm text-zinc-500 mb-2">Total Prizes Paid</div>
-                <div className="text-3xl font-black">{totalPrizes.toFixed(2)} ETH</div>
+                <div className="text-3xl font-black">{snapshot ? data.totalPrizes.toFixed(4) : "..."} USDC</div>
               </div>
               <div className="p-6 bg-zinc-900/50 border border-zinc-800 rounded-2xl col-span-2 md:col-span-1">
                 <div className="text-sm text-zinc-500 mb-2">Largest Win</div>
                 <div className="text-3xl font-black">
-                  {Math.max(...allWinners.map(w => w.amount)).toFixed(2)} ETH
+                  {snapshot ? data.largestWin.toFixed(4) : "..."} USDC
                 </div>
               </div>
             </div>
@@ -153,9 +128,10 @@ export function WinnersPage() {
                 className="pl-12 pr-8 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-white focus:outline-none focus:border-zinc-700 appearance-none cursor-pointer"
               >
                 <option value="all">All Draws</option>
-                {Array.from(new Set(allWinners.map(w => w.draw))).sort((a, b) => b - a).map(draw => (
+                {/* {uniqueDraws.map(draw => (
+                {(snapshot ? data.draws : uniqueDraws).map(draw => (
                   <option key={draw} value={draw}>Draw #{draw}</option>
-                ))}
+                ))} */}
               </select>
             </div>
           </div>
@@ -165,10 +141,14 @@ export function WinnersPage() {
       {/* Winners List */}
       <section className="relative py-12 px-6">
         <div className="container mx-auto max-w-7xl">
+          {error && (
+            <div className="text-red-400 mb-4">Failed to load winners: {error.message}</div>
+          )}
+
           <div className="grid md:grid-cols-2 gap-6">
-            {filteredWinners.map((winner, index) => (
+            {(snapshot ? filteredWinners : Array.from({ length: 4 })).map((winner: any, index: number) => (
               <motion.div
-                key={winner.id}
+                key={!snapshot ? `skeleton-${index}` : winner.id}
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: index * 0.05 }}
@@ -176,7 +156,7 @@ export function WinnersPage() {
               >
                 <div className="relative p-8 bg-zinc-900 border border-zinc-800 rounded-3xl hover:border-zinc-700 transition-all h-full">
                   {/* Rank badge for top 3 */}
-                  {index < 3 && filterDraw === "all" && searchTerm === "" && (
+                  {snapshot && index < 3 && filterDraw === "all" && searchTerm === "" && (
                     <div className="absolute -top-3 -right-3 w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 rounded-full flex items-center justify-center border-4 border-black">
                       <span className="text-sm font-black">#{index + 1}</span>
                     </div>
@@ -189,13 +169,13 @@ export function WinnersPage() {
                         <Trophy className="w-6 h-6 text-amber-400" />
                       </div>
                       <div>
-                        <div className="text-sm text-zinc-500">Draw #{winner.draw}</div>
-                        <div className="text-xs text-zinc-600">{winner.date}</div>
+                        <div className="text-sm text-zinc-500">Draw #{snapshot ? winner.draw : "-"}</div>
+                        <div className="text-xs text-zinc-600">{snapshot ? winner.date : "Loading..."}</div>
                       </div>
                     </div>
 
                     <motion.a
-                      href="#"
+                      href={!snapshot ? "#" : `${ACTIVE_CONFIG.EXPLORER_URL}/address/${winner.wallet}`}
                       className="w-10 h-10 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center hover:bg-zinc-700 transition-colors"
                       whileHover={{ scale: 1.1 }}
                       whileTap={{ scale: 0.9 }}
@@ -208,15 +188,7 @@ export function WinnersPage() {
                   <div className="mb-6">
                     <div className="text-xs text-zinc-500 mb-2 tracking-wider uppercase">Winner Address</div>
                     <div className="p-3 bg-zinc-800/50 border border-zinc-700 rounded-lg">
-                      <p className="text-sm font-mono text-zinc-300 break-all">{winner.wallet}</p>
-                    </div>
-                  </div>
-
-                  {/* Transaction hash */}
-                  <div className="mb-6">
-                    <div className="text-xs text-zinc-500 mb-2 tracking-wider uppercase">Transaction Hash</div>
-                    <div className="p-3 bg-zinc-800/50 border border-zinc-700 rounded-lg">
-                      <p className="text-xs font-mono text-zinc-400 break-all">{winner.txHash}</p>
+                      <p className="text-sm font-mono text-zinc-300 break-all">{snapshot ? winner.wallet : "0x..."}</p>
                     </div>
                   </div>
 
@@ -225,13 +197,13 @@ export function WinnersPage() {
                     <div className="text-xs text-zinc-500 mb-2 tracking-wider uppercase">Prize Amount</div>
                     <div className="flex items-baseline gap-2">
                       <span className="text-4xl font-black bg-gradient-to-r from-white to-zinc-400 bg-clip-text text-transparent">
-                        {winner.amount.toFixed(2)}
+                        {snapshot ? winner.amount.toFixed(4) : "..."}
                       </span>
-                      <span className="text-xl text-zinc-400">ETH</span>
+                      <span className="text-xl text-zinc-400">USDC</span>
                     </div>
-                    <p className="text-sm text-zinc-500 mt-1">
-                      ≈ ${(winner.amount * 3200).toLocaleString()} USD
-                    </p>
+                    {snapshot && (
+                      <p className="text-sm text-zinc-500 mt-1">Bet: {winner.bet.toFixed(4)} USDC</p>
+                    )}
                   </div>
 
                   {/* Verification badge */}
@@ -244,7 +216,7 @@ export function WinnersPage() {
             ))}
           </div>
 
-          {filteredWinners.length === 0 && (
+          {snapshot && filteredWinners.length === 0 && (
             <div className="text-center py-20">
               <div className="text-zinc-500 mb-4">No winners found matching your search</div>
               <button

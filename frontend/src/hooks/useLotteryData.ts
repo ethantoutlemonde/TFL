@@ -1,4 +1,5 @@
-import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { useEffect, useState } from 'react';
+import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
 import { formatUnits, parseUnits, type Abi } from 'viem';
 import { LOTTERY_ADDRESS, PAYMENT_TOKEN_ADDRESS } from '../config/contracts';
 import LotteryABI from '../abi/Lottery.json';
@@ -42,12 +43,19 @@ export function useLotteryInfo() {
       {
         address: LOTTERY_ADDRESS as `0x${string}`,
         abi: LotteryABI,
+        functionName: 'currentNumberOfTicketTypes',
+      },
+      {
+        address: LOTTERY_ADDRESS as `0x${string}`,
+        abi: LotteryABI,
         functionName: 'paused',
       },
     ],
     query: {
-      staleTime: Infinity, // Données restent fraîches jusqu'au refetch manuel
-      gcTime: 1000 * 60 * 5, // 5 minutes avant suppression du cache
+      // Only fetch when the page mounts; no polling or focus refetch
+      refetchOnWindowFocus: false,
+      refetchInterval: false,
+      staleTime: Infinity,
     },
   });
 
@@ -58,7 +66,8 @@ export function useLotteryInfo() {
     roundDuration: data?.[2]?.result ? Number(data[2].result) : 0,
     numberOfTickets: data?.[3]?.result ? Number(data[3].result) : 0,
     treasuryFeePercent: data?.[4]?.result ? Number(data[4].result) : 0,
-    isPaused: data?.[5]?.result as boolean | undefined,
+    currentNumberOfTicketTypes: data?.[5]?.result ? Number(data[5].result) : 0,
+    isPaused: data?.[6]?.result as boolean | undefined,
     isLoading,
     error,
     refetch,
@@ -72,21 +81,26 @@ export function useRoundInfo(roundId: number) {
   const { data, isLoading, error, refetch } = useReadContract({
     address: LOTTERY_ADDRESS as `0x${string}`,
     abi: LotteryABI,
-    functionName: 'rounds',
+    functionName: 'getRoundInfo',
     args: [BigInt(roundId)],
   });
 
-  // Le retour de rounds() est un tuple
-  const roundData = data as [bigint, bigint, bigint, boolean, bigint, bigint, bigint] | undefined;
+  // Le retour de getRoundInfo() est un tuple
+  const roundData = data as [bigint, bigint, boolean, boolean, bigint, bigint, bigint[], bigint[]] | undefined;
+  const poolAmounts = roundData?.[6] ?? [];
+  const totalPool = poolAmounts.reduce((acc, amount) => acc + (amount ?? 0n), 0n);
 
   return {
     startTime: roundData?.[0] ? Number(roundData[0]) : 0,
     endTime: roundData?.[1] ? Number(roundData[1]) : 0,
-    numberOfTickets: roundData?.[2] ? Number(roundData[2]) : 0,
+    isActive: roundData?.[2] ?? false,
     isFinalized: roundData?.[3] ?? false,
     winningTicketType: roundData?.[4] ? Number(roundData[4]) : 0,
-    vrfRequestId: roundData?.[5],
-    totalPrize: roundData?.[6] ? formatUnits(roundData[6], 18) : '0',
+    totalTickets: roundData?.[5] ? Number(roundData[5]) : 0,
+    numberOfTickets: roundData?.[5] ? Number(roundData[5]) : 0,
+    totalPool: formatUnits(totalPool, 18),
+    totalPrize: formatUnits(totalPool, 18),
+    poolAmounts,
     isLoading,
     error,
     refetch,
@@ -350,118 +364,148 @@ export function useFinalizedRounds(currentRoundId: number, limit: number = 10) {
   const contracts = roundIds.map(roundId => ({
     address: LOTTERY_ADDRESS as `0x${string}`,
     abi: lotteryAbi,
-    functionName: 'rounds',
+    functionName: 'getRoundInfo',
     args: [BigInt(roundId)],
   }));
 
   const { data, isLoading, error, refetch } = useReadContracts({ contracts });
 
   const rounds = data?.map((result, index) => {
-    const roundData = result.result as [bigint, bigint, bigint, boolean, bigint, bigint, bigint] | undefined;
+    const roundData = result.result as [bigint, bigint, boolean, boolean, bigint, bigint, bigint[], bigint[]] | undefined;
+    if (!roundData) return undefined;
+    const poolAmounts = roundData[6] ?? [];
+    const totalPool = poolAmounts.reduce((acc, amount) => acc + (amount ?? 0n), 0n);
     return {
       roundId: roundIds[index],
       startTime: roundData?.[0] ? Number(roundData[0]) : 0,
       endTime: roundData?.[1] ? Number(roundData[1]) : 0,
-      numberOfTickets: roundData?.[2] ? Number(roundData[2]) : 0,
+      isActive: roundData?.[2] ?? false,
       isFinalized: roundData?.[3] ?? false,
       winningTicketType: roundData?.[4] ? Number(roundData[4]) : 0,
-      totalPrize: roundData?.[6] ? formatUnits(roundData[6], 18) : '0',
+      totalTickets: roundData?.[5] ? Number(roundData[5]) : 0,
+      totalPool: formatUnits(totalPool, 18),
+      poolAmounts,
+      playerCounts: roundData[7] ?? [],
     };
-  }).filter(r => r.isFinalized) ?? [];
+  }).filter(r => r && r.isFinalized) ?? [];
 
-  return { rounds, isLoading, error, refetch };
+  return { rounds: rounds as typeof rounds, isLoading, error, refetch };
 }
 
 /**
- * Hook pour récupérer les tickets historiques du joueur pour TOUS les rounds
- * Boucle sur les rounds passés et récupère les infos du joueur
+ * Hook pour récupérer les gagnants réels on-chain pour les derniers rounds finalisés
  */
-export function usePlayerHistoricalTickets(playerAddress: string | undefined, currentRoundId: number) {
-  // On va récupérer les infos pour chaque round passé
-  // Pour simplifier, on va faire des queries pour les derniers N rounds (ex: 10)
-  const maxPastRounds = 10;
-  const startRound = Math.max(1, currentRoundId - maxPastRounds);
-  
-  const roundIds = Array.from({ length: currentRoundId - startRound }, (_, i) => startRound + i);
+export function useWinners(limit: number = 5) {
+  const { currentRoundId, treasuryFeePercent } = useLotteryInfo();
+  const publicClient = usePublicClient();
 
-  // Récupérer les types de tickets pour tous les rounds
-  const ticketsData = useReadContracts({
-    contracts: roundIds.map(roundId => ({
+  const roundIds = Array.from({ length: Math.min(currentRoundId, limit) }, (_, i) => currentRoundId - i).filter(id => id > 0);
+
+  const { data, isLoading: roundsLoading, error: roundsError } = useReadContracts({
+    contracts: roundIds.map((roundId) => ({
       address: LOTTERY_ADDRESS as `0x${string}`,
       abi: lotteryAbi,
-      functionName: 'userTickets',
-      args: playerAddress ? [BigInt(roundId), playerAddress as `0x${string}`] : undefined,
+      functionName: 'getRoundInfo',
+      args: [BigInt(roundId)],
     })),
     query: {
-      enabled: !!playerAddress && roundIds.length > 0,
+      // Load once when the page opens; no background refresh
+      refetchOnWindowFocus: false,
+      refetchInterval: false,
       staleTime: Infinity,
-      gcTime: 1000 * 60 * 10, // 10 min cache
     },
   });
 
-  // Récupérer les montants de paris pour tous les rounds
-  const betAmountsData = useReadContracts({
-    contracts: roundIds.map(roundId => ({
-      address: LOTTERY_ADDRESS as `0x${string}`,
-      abi: lotteryAbi,
-      functionName: 'userBetAmounts',
-      args: playerAddress ? [BigInt(roundId), playerAddress as `0x${string}`] : undefined,
-    })),
-    query: {
-      enabled: !!playerAddress && roundIds.length > 0,
-      staleTime: Infinity,
-      gcTime: 1000 * 60 * 10,
-    },
-  });
+  const [winners, setWinners] = useState<Array<{
+    roundId: number;
+    winningTicketType: number;
+    totalPoolFormatted: string;
+    prizePoolFormatted: string;
+    endTime: number;
+    winners: Array<{ address: string; betFormatted: string; payoutFormatted: string }>;
+  }>>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
 
-  // Récupérer le prix du ticket une fois
-  const { data: ticketPriceData } = useReadContract({
-    address: LOTTERY_ADDRESS as `0x${string}`,
-    abi: lotteryAbi,
-    functionName: 'ticketPrice',
-    query: {
-      enabled: !!playerAddress,
-      staleTime: Infinity,
-      gcTime: 1000 * 60 * 10,
-    },
-  });
+  useEffect(() => {
+    const fetchWinners = async () => {
+      if (!publicClient || !data) return;
+      setIsLoading(true);
+      try {
+        const finalized = data
+          .map((res, idx) => ({ result: res.result, roundId: roundIds[idx] }))
+          .filter((item) => {
+            const roundData = item.result as [bigint, bigint, boolean, boolean, bigint, bigint, bigint[], bigint[]] | undefined;
+            return roundData ? (roundData[3] ?? false) : false;
+          });
 
-  const ticketPriceBigint = ticketPriceData as bigint | undefined;
+        const processed = await Promise.all(finalized.map(async ({ result, roundId }) => {
+          const roundData = result as [bigint, bigint, boolean, boolean, bigint, bigint, bigint[], bigint[]];
+          const winningTicketType = roundData[4] ? Number(roundData[4]) : 0;
+          const endTime = Number(roundData[1] ?? 0n);
+          if (winningTicketType === 0) {
+            return {
+              roundId,
+              winningTicketType,
+              totalPoolFormatted: '0',
+              prizePoolFormatted: '0',
+              endTime,
+              winners: [],
+            };
+          }
 
-  // Combiner les données
-  const tickets = roundIds
-    .map((roundId, index) => {
-      const ticketType = ticketsData.data?.[index]?.result as number | undefined;
-      const betAmount = betAmountsData.data?.[index]?.result as bigint | undefined;
+          const poolAmounts = roundData[6] ?? [];
+          const totalPool = poolAmounts.reduce((acc, amount) => acc + (amount ?? 0n), 0n);
+          const treasuryFee = (totalPool * BigInt(treasuryFeePercent)) / 10000n;
+          const prizePool = totalPool - treasuryFee;
+          const winningTotalAmount = poolAmounts[winningTicketType - 1] ?? 0n;
 
-      if (!ticketType || ticketType === 0 || !betAmount) {
-        return null;
+          const players = await publicClient.readContract({
+            address: LOTTERY_ADDRESS as `0x${string}`,
+            abi: lotteryAbi,
+            functionName: 'getPlayersByTicketType',
+            args: [BigInt(roundId), BigInt(winningTicketType)],
+          }) as string[];
+
+          const playersWithAmounts = await Promise.all(players.map(async (address) => {
+            const bet = await publicClient.readContract({
+              address: LOTTERY_ADDRESS as `0x${string}`,
+              abi: lotteryAbi,
+              functionName: 'userBetAmounts',
+              args: [BigInt(roundId), address as `0x${string}`],
+            }) as bigint;
+
+            const share = winningTotalAmount > 0n ? (bet * prizePool) / winningTotalAmount : 0n;
+            const payout = bet + share;
+
+            return {
+              address,
+              betFormatted: formatUnits(bet, 18),
+              payoutFormatted: formatUnits(payout, 18),
+            };
+          }));
+
+          return {
+            roundId,
+            winningTicketType,
+            totalPoolFormatted: formatUnits(totalPool, 18),
+            prizePoolFormatted: formatUnits(prizePool, 18),
+            endTime,
+            winners: playersWithAmounts,
+          };
+        }));
+
+        setWinners(processed);
+        setError(null);
+      } catch (err: any) {
+        setError(err);
+      } finally {
+        setIsLoading(false);
       }
+    };
 
-      // Calculer la quantité
-      let quantity = 1;
-      if (ticketPriceBigint && ticketPriceBigint > 0n) {
-        quantity = Number(betAmount / ticketPriceBigint);
-      }
+    fetchWinners();
+  }, [data, publicClient, roundIds, treasuryFeePercent]);
 
-      return {
-        roundId,
-        ticketType,
-        quantity,
-        amount: formatUnits(betAmount, 18),
-        amountRaw: betAmount,
-        hasTicket: true,
-      };
-    })
-    .filter((t): t is NonNullable<typeof t> => t !== null);
-
-  return {
-    tickets,
-    isLoading: ticketsData.isLoading || betAmountsData.isLoading,
-    error: ticketsData.error || betAmountsData.error,
-    refetch: async () => {
-      await ticketsData.refetch();
-      await betAmountsData.refetch();
-    },
-  };
+  return { winners, isLoading: isLoading || roundsLoading, error: error || roundsError };
 }
