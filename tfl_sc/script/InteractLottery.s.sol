@@ -141,6 +141,12 @@ contract BuyTickets is Script {
         address paymentToken = vm.envAddress("PAYMENT_TOKEN");
         uint8 camp = uint8(vm.envUint("CAMP"));
         
+        // Quantity (par défaut 1)
+        uint256 quantity = 1;
+        try vm.envUint("QUANTITY") returns (uint256 qty) {
+            quantity = qty;
+        } catch {}
+        
         Lottery lottery = Lottery(lotteryAddress);
         IERC20 token = IERC20(paymentToken);
         
@@ -149,25 +155,27 @@ contract BuyTickets is Script {
         console.log("========================================");
         console.log("         BUY TICKET");
         console.log("========================================");
-        console.log("Lottery:");
-        console.log(lotteryAddress);
+        console.log("Lottery:", lotteryAddress);
         console.log("Camp:", camp);
-        console.log("Ticket Price (wei):", ticketPrice);
+        console.log("Quantity:", quantity);
+        console.log("Ticket Price per unit (wei):", ticketPrice);
+        console.log("Total cost (wei):", ticketPrice * quantity);
         
         vm.startBroadcast();
         
         // Approuver le token si nécessaire
         uint256 allowance = token.allowance(msg.sender, lotteryAddress);
-        if (allowance < ticketPrice) {
+        uint256 totalCost = ticketPrice * quantity;
+        if (allowance < totalCost) {
             console.log("Approving tokens...");
             token.approve(lotteryAddress, type(uint256).max);
             console.log("Approved!");
         }
         
-        // Acheter le ticket
-        console.log("Buying ticket...");
-        lottery.buyTicket(camp);
-        console.log("Ticket purchased!");
+        // Acheter les tickets
+        console.log("Buying", quantity, "ticket(s)...");
+        lottery.buyTicket(camp, quantity);
+        console.log("Tickets purchased!");
         
         vm.stopBroadcast();
         

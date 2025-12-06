@@ -7,8 +7,10 @@ import { useWallet } from '../hooks/useWallet';
 import { 
   useLotteryInfo, 
   usePlayerAllTickets, 
+  usePlayerHistoricalTickets,
   usePlayerWinnings,
-  useWithdraw 
+  useWithdraw,
+  useRoundInfo
 } from '../hooks/useLotteryData';
 
 interface DashboardPageProps {
@@ -16,18 +18,170 @@ interface DashboardPageProps {
   onBuyTickets: () => void;
 }
 
-const TICKET_TYPE_NAMES = ['', 'Bronze', 'Silver', 'Gold', 'Diamond'];
-const TICKET_TYPE_COLORS = ['', 'amber', 'zinc', 'yellow', 'cyan'];
+const TICKET_TYPE_NAMES = ['', 'Pile', 'Face'];
+const TICKET_COLORS = {
+  1: { bg: 'bg-green-500/20', border: 'border-green-500/30', text: 'text-green-400', icon: 'text-green-400', emoji: '🎯' },
+  2: { bg: 'bg-red-500/20', border: 'border-red-500/30', text: 'text-red-400', icon: 'text-red-400', emoji: '🎲' },
+};
 
-// Helper function to get ticket color classes
+// Map quantity to tier name
+const QUANTITY_TO_TIER: { [key: number]: string } = {
+  1: 'Bronze',
+  2: 'Silver',
+  5: 'Gold',
+  10: 'Diamond',
+  15: 'Platinum',
+  20: 'Legend',
+};
+
+// Map tier to colors (like in buy-page)
+const TIER_COLORS: { [key: string]: { bg: string; border: string; text: string; bgClass: string } } = {
+  Bronze: { bg: 'bg-amber-500/20', border: 'border-amber-500/30', text: 'text-amber-400', bgClass: 'bg-amber-500' },
+  Silver: { bg: 'bg-slate-500/20', border: 'border-slate-500/30', text: 'text-slate-300', bgClass: 'bg-slate-500' },
+  Gold: { bg: 'bg-yellow-500/20', border: 'border-yellow-500/30', text: 'text-yellow-400', bgClass: 'bg-yellow-500' },
+  Diamond: { bg: 'bg-cyan-500/20', border: 'border-cyan-500/30', text: 'text-cyan-400', bgClass: 'bg-cyan-500' },
+  Platinum: { bg: 'bg-purple-500/20', border: 'border-purple-500/30', text: 'text-purple-400', bgClass: 'bg-purple-500' },
+  Legend: { bg: 'bg-pink-500/20', border: 'border-pink-500/30', text: 'text-pink-400', bgClass: 'bg-pink-500' },
+};
+
+// Helper function to get color classes based on ticketType (Pile=1, Face=2)
 function getTicketColorClasses(ticketType: number) {
-  const colorMap: { [key: number]: { bg: string; border: string; text: string; icon: string } } = {
-    1: { bg: 'bg-amber-500/20', border: 'border-amber-500/30', text: 'text-amber-400', icon: 'text-amber-400' },
-    2: { bg: 'bg-zinc-500/20', border: 'border-zinc-400/30', text: 'text-zinc-300', icon: 'text-zinc-300' },
-    3: { bg: 'bg-yellow-500/20', border: 'border-yellow-500/30', text: 'text-yellow-400', icon: 'text-yellow-400' },
-    4: { bg: 'bg-cyan-500/20', border: 'border-cyan-500/30', text: 'text-cyan-400', icon: 'text-cyan-400' },
-  };
-  return colorMap[ticketType] || colorMap[1];
+  return TICKET_COLORS[ticketType as keyof typeof TICKET_COLORS] || TICKET_COLORS[1];
+}
+
+// Convert quantity to tier name - use minimum tier threshold
+function quantityToTier(quantity: number): string {
+  // Find the tier based on minimum threshold reached
+  if (quantity >= 20) return 'Legend';
+  if (quantity >= 15) return 'Platinum';
+  if (quantity >= 10) return 'Diamond';
+  if (quantity >= 5) return 'Gold';
+  if (quantity >= 2) return 'Silver';
+  return 'Bronze';
+}
+
+// Get tier color based on quantity
+function getTierColorClasses(quantity: number) {
+  const tierName = quantityToTier(quantity);
+  return TIER_COLORS[tierName] || TIER_COLORS['Bronze'];
+}
+
+// Past Ticket Card Component
+interface PastTicketCardProps {
+  ticket: any;
+  index: number;
+  onViewTicket: (ticketId: number) => void;
+}
+
+function PastTicketCard({ ticket, index, onViewTicket }: PastTicketCardProps) {
+  const roundInfo = useRoundInfo(ticket.roundId);
+  
+  // Determine if ticket won
+  const ticketWon = roundInfo.isFinalized && roundInfo.winningTicketType === ticket.ticketType;
+  const tierColor = getTierColorClasses(ticket.quantity);
+  const tierEmoji = 
+    quantityToTier(ticket.quantity) === 'Bronze' ? '🥉' : 
+    quantityToTier(ticket.quantity) === 'Silver' ? '🥈' :
+    quantityToTier(ticket.quantity) === 'Gold' ? '🥇' :
+    quantityToTier(ticket.quantity) === 'Diamond' ? '💎' :
+    quantityToTier(ticket.quantity) === 'Platinum' ? '👑' : '✨';
+  
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6, delay: 0.4 + index * 0.1 }}
+      className="group relative"
+    >
+      <div className={`relative p-8 rounded-3xl overflow-hidden border transition-all ${
+        ticketWon ? 'border-green-500/40' : 'border-red-500/40'
+      }`}
+           style={{
+             background: ticketWon 
+               ? `linear-gradient(135deg, rgb(34 197 94 / 0.25) 0%, rgb(34 197 94 / 0.1) 100%)`
+               : `linear-gradient(135deg, rgb(239 68 68 / 0.25) 0%, rgb(239 68 68 / 0.1) 100%)`,
+           }}>
+        
+        {/* Subtle background effect */}
+        <div className={`absolute -bottom-40 -right-40 w-80 h-80 ${tierColor.bgClass} opacity-5 rounded-full blur-[100px]`} />
+        
+        {/* Result badge */}
+        <div className="absolute top-6 right-6 z-10">
+          {roundInfo.isFinalized ? (
+            ticketWon ? (
+              <div className="flex items-center gap-2 px-4 py-2 bg-green-500/20 border border-green-500/50 rounded-full backdrop-blur-sm">
+                <span className="text-lg">🏆</span>
+                <span className="text-xs text-green-300 font-bold tracking-wide uppercase">Won!</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 px-4 py-2 bg-red-500/20 border border-red-500/30 rounded-full backdrop-blur-sm">
+                <span className="text-lg">❌</span>
+                <span className="text-xs text-red-300 font-bold tracking-wide uppercase">Lost</span>
+              </div>
+            )
+          ) : (
+            <div className="flex items-center gap-2 px-4 py-2 bg-zinc-800/80 border border-zinc-700 rounded-full backdrop-blur-sm">
+              <span className="text-xs text-zinc-400 font-bold tracking-wide uppercase">
+                Pending
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Main content */}
+        <div className="relative z-5">
+          {/* Header with tier badge */}
+          <div className="flex items-start gap-4 mb-6">
+            <div className={`w-16 h-16 rounded-2xl ${tierColor.bg} border-2 ${tierColor.border} flex items-center justify-center flex-shrink-0`}>
+              <span className="text-4xl">{tierEmoji}</span>
+            </div>
+            <div className="flex-1 pt-1">
+              <div className="text-xs text-zinc-500 font-semibold tracking-widest uppercase mb-1">Round #{ticket.roundId}</div>
+              <h3 className={`text-2xl font-black tracking-tight ${ticketWon ? 'text-green-400' : tierColor.text}`}>
+                {TICKET_TYPE_NAMES[ticket.ticketType]}
+              </h3>
+              <div className={`text-sm font-bold ${ticketWon ? 'text-green-400/75' : tierColor.text + ' opacity-75'} mt-1`}>
+                {quantityToTier(ticket.quantity)} Tier
+              </div>
+            </div>
+          </div>
+
+          {/* Stats grid */}
+          <div className={`grid grid-cols-3 gap-4 mb-6 p-4 rounded-2xl backdrop-blur-sm border ${
+            ticketWon ? 'bg-green-500/10 border-green-500/20' : 'bg-black/30 border-white/5'
+          }`}>
+            <div>
+              <div className="text-xs text-zinc-500 font-semibold mb-2 uppercase tracking-wider">Tier</div>
+              <div className={`text-lg font-black ${tierColor.text}`}>
+                {quantityToTier(ticket.quantity)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-zinc-500 font-semibold mb-2 uppercase tracking-wider">Amount</div>
+              <div className={`text-lg font-black ${tierColor.text}`}>{ticket.amount}</div>
+            </div>
+            <div>
+              <div className="text-xs text-zinc-500 font-semibold mb-2 uppercase tracking-wider">Result</div>
+              <div className={`text-lg font-black ${ticketWon ? 'text-green-400' : 'text-red-400'}`}>
+                {roundInfo.isFinalized ? (ticketWon ? '✓' : '✗') : '-'}
+              </div>
+            </div>
+          </div>
+
+          {/* Action button */}
+          <motion.button
+            onClick={() => onViewTicket(ticket.roundId)}
+            className={`w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r ${tierColor.bg} border ${ticketWon ? 'border-green-500/50' : tierColor.border} rounded-xl font-bold transition-all hover:scale-105 active:scale-95`}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <ExternalLink className="w-4 h-4" />
+            <span>View Details</span>
+          </motion.button>
+        </div>
+      </div>
+    </motion.div>
+  );
 }
 
 export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps) {
@@ -38,8 +192,11 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
   // Récupérer les infos de la loterie
   const { currentRoundId, isLoading: lotteryLoading } = useLotteryInfo();
   
-  // Récupérer tous les tickets du joueur
-  const { tickets, isLoading: ticketsLoading, refetch: refetchTickets } = usePlayerAllTickets(address, currentRoundId);
+  // Récupérer le ticket du round courant
+  const { tickets: currentRoundTickets, isLoading: ticketsLoading, refetch: refetchTickets } = usePlayerAllTickets(address, currentRoundId);
+  
+  // Récupérer les tickets historiques des rounds passés
+  const { tickets: historicalTickets, isLoading: historicalLoading } = usePlayerHistoricalTickets(address, currentRoundId);
   
   // Récupérer les gains du joueur
   const { pendingWinnings, isLoading: winningsLoading, refetch: refetchWinnings } = usePlayerWinnings(address);
@@ -61,11 +218,14 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
     }
   };
 
-  // Calculer les stats
-  const totalTickets = tickets.length;
-  const activeTickets = tickets.filter(t => t.roundId === currentRoundId);
-  const pastTickets = tickets.filter(t => t.roundId < currentRoundId);
-  const totalSpent = tickets.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+  // Combiner tous les tickets
+  const allTickets = [...currentRoundTickets, ...historicalTickets];
+  
+  // Filtrer les tickets actifs et passés
+  const activeTickets = allTickets.filter(t => t.roundId === currentRoundId);
+  const pastTickets = allTickets.filter(t => t.roundId < currentRoundId);
+  const totalTickets = allTickets.length;
+  const totalSpent = allTickets.reduce((sum: number, t: any) => sum + parseFloat(t.amount), 0);
   const pendingWinningsNum = parseFloat(pendingWinnings);
 
   const stats = [
@@ -95,7 +255,7 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
     },
   ];
 
-  const isLoading = lotteryLoading || ticketsLoading || winningsLoading;
+  const isLoading = lotteryLoading || ticketsLoading || historicalLoading || winningsLoading;
 
   return (
     <div className="min-h-screen pt-20">
@@ -232,69 +392,100 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
             </motion.div>
           ) : (
             <div className="grid md:grid-cols-2 gap-6 mb-12">
-              {activeTickets.map((ticket, index) => (
-                <motion.div
-                  key={`${ticket.roundId}-${ticket.ticketType}`}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: index * 0.1 }}
-                  className="group relative"
-                >
-                  <div className="relative p-6 bg-zinc-900 border border-zinc-800 rounded-2xl hover:border-zinc-700 transition-all overflow-hidden">
-                    {/* Active indicator */}
-                    <div className="absolute top-6 right-6">
-                      <div className="flex items-center gap-2 px-3 py-1.5 bg-green-500/10 border border-green-500/20 rounded-full">
-                        <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                        <span className="text-xs text-green-400 font-semibold tracking-wider uppercase">
-                          Active
-                        </span>
+              {activeTickets.map((ticket: any, index: number) => {
+                const tierColor = getTierColorClasses(ticket.quantity);
+                const tierEmoji = 
+                  quantityToTier(ticket.quantity) === 'Bronze' ? '🥉' : 
+                  quantityToTier(ticket.quantity) === 'Silver' ? '🥈' :
+                  quantityToTier(ticket.quantity) === 'Gold' ? '🥇' :
+                  quantityToTier(ticket.quantity) === 'Diamond' ? '💎' :
+                  quantityToTier(ticket.quantity) === 'Platinum' ? '👑' : '✨';
+                
+                return (
+                  <motion.div
+                    key={`${ticket.roundId}-${ticket.ticketType}`}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.6, delay: index * 0.1 }}
+                    className="group relative"
+                  >
+                    <div className={`relative p-8 rounded-3xl overflow-hidden border transition-all hover:border-opacity-100 ${tierColor.border}`}
+                         style={{
+                           background: `linear-gradient(135deg, ${tierColor.bgClass}25 0%, ${tierColor.bgClass}10 100%)`,
+                           borderColor: `${tierColor.bgClass}40`,
+                         }}>
+                      
+                      {/* Animated background blur */}
+                      <div className={`absolute -top-40 -right-40 w-80 h-80 ${tierColor.bgClass} opacity-10 rounded-full blur-[100px] animate-pulse`} />
+                      
+                      {/* Active indicator badge */}
+                      <div className="absolute top-6 right-6 z-10">
+                        <motion.div 
+                          animate={{ y: [0, -4, 0] }}
+                          transition={{ duration: 2, repeat: Infinity }}
+                          className="flex items-center gap-2 px-4 py-2 bg-green-500/15 border border-green-500/30 rounded-full backdrop-blur-sm"
+                        >
+                          <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                          <span className="text-xs text-green-300 font-bold tracking-wide uppercase">
+                            Live
+                          </span>
+                        </motion.div>
+                      </div>
+
+                      {/* Main content */}
+                      <div className="relative z-5">
+                        {/* Header with tier badge */}
+                        <div className="flex items-start gap-4 mb-6">
+                          <motion.div 
+                            whileHover={{ scale: 1.1, rotate: 5 }}
+                            className={`w-16 h-16 rounded-2xl ${tierColor.bg} border-2 ${tierColor.border} flex items-center justify-center flex-shrink-0`}
+                          >
+                            <span className="text-4xl">{tierEmoji}</span>
+                          </motion.div>
+                          <div className="flex-1 pt-1">
+                            <div className="text-xs text-zinc-500 font-semibold tracking-widest uppercase mb-1">Round #{ticket.roundId}</div>
+                            <h3 className={`text-2xl font-black tracking-tight ${tierColor.text}`}>
+                              {TICKET_TYPE_NAMES[ticket.ticketType]}
+                            </h3>
+                            <div className={`text-sm font-bold ${tierColor.text} opacity-75 mt-1`}>
+                              {quantityToTier(ticket.quantity)} Tier
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Stats grid */}
+                        <div className="grid grid-cols-3 gap-4 mb-6 p-4 bg-black/30 rounded-2xl backdrop-blur-sm border border-white/5">
+                          <div>
+                            <div className="text-xs text-zinc-500 font-semibold mb-2 uppercase tracking-wider">Tier</div>
+                            <div className={`text-lg font-black ${tierColor.text}`}>
+                              {quantityToTier(ticket.quantity)}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-zinc-500 font-semibold mb-2 uppercase tracking-wider">Amount</div>
+                            <div className={`text-lg font-black ${tierColor.text}`}>{ticket.amount}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-zinc-500 font-semibold mb-2 uppercase tracking-wider">Status</div>
+                            <div className="text-lg font-black text-green-400">Pending</div>
+                          </div>
+                        </div>
+
+                        {/* Action button */}
+                        <motion.button
+                          onClick={() => onViewTicket(ticket.roundId)}
+                          className={`w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r ${tierColor.bg} border ${tierColor.border} rounded-xl font-bold transition-all hover:scale-105 active:scale-95`}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                          <span>View Details</span>
+                        </motion.button>
                       </div>
                     </div>
-
-                    {/* Draw info */}
-                    <div className="mb-6">
-                      <div className="flex items-center gap-3 mb-4">
-                        <div className={`w-12 h-12 rounded-xl ${getTicketColorClasses(ticket.ticketType).bg} border ${getTicketColorClasses(ticket.ticketType).border} flex items-center justify-center`}>
-                          <Ticket className={`w-6 h-6 ${getTicketColorClasses(ticket.ticketType).icon}`} />
-                        </div>
-                        <div>
-                          <div className="text-sm text-zinc-500">Round #{ticket.roundId}</div>
-                          <div className="font-semibold">{TICKET_TYPE_NAMES[ticket.ticketType]} Ticket</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Details grid */}
-                    <div className="grid grid-cols-2 gap-4 mb-6">
-                      <div>
-                        <div className="text-xs text-zinc-500 mb-1">Ticket Type</div>
-                        <div className={`text-sm font-semibold ${getTicketColorClasses(ticket.ticketType).text}`}>
-                          {TICKET_TYPE_NAMES[ticket.ticketType]}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-zinc-500 mb-1">Amount Staked</div>
-                        <div className="text-sm font-semibold">{ticket.amount} TFL</div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-zinc-500 mb-1">Status</div>
-                        <div className="text-sm font-semibold text-green-400">Pending Draw</div>
-                      </div>
-                    </div>
-
-                    {/* Action button */}
-                    <motion.button
-                      onClick={() => onViewTicket(ticket.roundId)}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl hover:bg-zinc-700 transition-colors"
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                    >
-                      <span className="text-sm font-semibold">View Round Details</span>
-                      <ExternalLink className="w-4 h-4" />
-                    </motion.button>
-                  </div>
-                </motion.div>
-              ))}
+                  </motion.div>
+                );
+              })}
             </div>
           )}
 
@@ -305,54 +496,20 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: 0.3 }}
-                className="mb-8 mt-12"
+                className="mb-8 mt-16"
               >
-                <h2 className="text-3xl font-black tracking-tighter mb-2">Past Tickets</h2>
+                <h2 className="text-3xl font-black tracking-tighter mb-2">Previous Rounds</h2>
                 <p className="text-zinc-400">Your completed round entries</p>
               </motion.div>
 
-              <div className="space-y-4">
+              <div className="grid md:grid-cols-2 gap-6">
                 {pastTickets.map((ticket, index) => (
-                  <motion.div
-                    key={`${ticket.roundId}-${ticket.ticketType}`}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.6, delay: 0.4 + index * 0.1 }}
-                    className="group"
-                  >
-                    <div className="relative p-6 bg-zinc-900/50 border border-zinc-800 rounded-2xl hover:border-zinc-700 transition-all">
-                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                        <div className="flex items-center gap-4">
-                          <div className={`w-12 h-12 rounded-xl ${getTicketColorClasses(ticket.ticketType).bg} border ${getTicketColorClasses(ticket.ticketType).border} flex items-center justify-center flex-shrink-0`}>
-                            <Ticket className={`w-6 h-6 ${getTicketColorClasses(ticket.ticketType).icon}`} />
-                          </div>
-                          <div>
-                            <div className="font-semibold mb-1">
-                              Round #{ticket.roundId} • {TICKET_TYPE_NAMES[ticket.ticketType]}
-                            </div>
-                            <div className="text-sm text-zinc-500">
-                              Staked: {ticket.amount} TFL
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-4">
-                          <div className="text-right">
-                            <div className="text-sm text-zinc-500 mb-1">Status</div>
-                            <div className="text-sm font-semibold text-zinc-400">Completed</div>
-                          </div>
-                          <motion.button
-                            onClick={() => onViewTicket(ticket.roundId)}
-                            className="px-4 py-2 border border-zinc-700 rounded-lg hover:bg-zinc-800 transition-colors flex items-center gap-2"
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                          </motion.button>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
+                  <PastTicketCard 
+                    key={`${ticket.roundId}-${ticket.ticketType}`} 
+                    ticket={ticket} 
+                    index={index}
+                    onViewTicket={onViewTicket}
+                  />
                 ))}
               </div>
             </>

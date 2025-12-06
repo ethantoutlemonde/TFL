@@ -9,7 +9,7 @@ export const SEPOLIA_CONFIG = {
   chainName: "Sepolia",
   
   // Contrat Lottery (VRF v2.5)
-  LOTTERY_ADDRESS: "0x8354BfBFe2Fad521Bf8A5DE2254a5bfe7337BbFd",
+  LOTTERY_ADDRESS: "0x0541969DdEa58E759CFd5dbFB4421ACBCe73d50D",
   
   // Token de paiement (USDC test)
   PAYMENT_TOKEN_ADDRESS: "0xbe72E441BF55620febc26715db68d3494213D8Cb",

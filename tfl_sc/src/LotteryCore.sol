@@ -119,6 +119,11 @@ abstract contract LotteryCore is LotteryConfig, LotteryVRF, ReentrancyGuard, Pau
     // Solde de la trésorerie
     uint256 public treasuryBalance;
 
+    // Argent non distribué du round précédent (jackpot accumulation)
+    // Lorsqu'un round n'a pas de gagnants, les mises vont ici
+    // et s'ajoutent au pool du prochain round
+    uint256 public carryoverPool;
+
     event RoundStarted(uint256 indexed roundId, uint8 numberOfTickets, uint256 startTime, uint256 endTime);
     event TicketPurchased(uint256 indexed roundId, address indexed player, uint8 ticketType, uint256 amount);
     event RoundClosed(uint256 indexed roundId, uint256 timestamp);
@@ -142,7 +147,7 @@ abstract contract LotteryCore is LotteryConfig, LotteryVRF, ReentrancyGuard, Pau
     }
 
     /**
-     * @notice Acheter un ticket pour le round actuel
+     * @notice Acheter plusieurs tickets pour le round actuel
      * 
      * Règles :
      * - Un joueur peut acheter PLUSIEURS tickets dans le MÊME round
@@ -152,12 +157,15 @@ abstract contract LotteryCore is LotteryConfig, LotteryVRF, ReentrancyGuard, Pau
      * - Les gains sont distribués PROPORTIONNELLEMENT au montant misé
      * 
      * Exemple de flux :
-     * 1. Player1 achète type 1 pour 100 tokens
-     * 2. Player1 peut re-acheter type 1 pour 50 tokens (total = 150)
+     * 1. Player1 achète 5 tickets type 1 (quantity=5, coût = 5 * ticketPrice)
+     * 2. Player1 peut re-acheter 3 tickets type 1 (total = 8 tickets, coût = 8 * ticketPrice)
      * 3. Player1 ne peut pas acheter type 2 (AlreadyHasTicket)
      * 4. Si type 1 gagne : gagne proportionnellement
+     * 
+     * @param ticketType Type de ticket (camp) à acheter
+     * @param quantity Nombre de tickets à acheter (min 1)
      */
-    function buyTicket(uint8 ticketType) external nonReentrant whenNotPaused {
+    function buyTicket(uint8 ticketType, uint256 quantity) external nonReentrant whenNotPaused {
         uint256 roundId = currentRoundId;
         Round storage round = rounds[roundId];
         
@@ -165,6 +173,7 @@ abstract contract LotteryCore is LotteryConfig, LotteryVRF, ReentrancyGuard, Pau
         if (!round.isActive) revert RoundNotActive();
         if (block.timestamp >= round.endTime) revert RoundNotActive();
         if (ticketType == 0 || ticketType > currentNumberOfTicketTypes) revert InvalidTicketType();
+        if (quantity == 0) revert InvalidTicketType(); // Quantity must be at least 1
         
         // Si le joueur a déjà un ticket, vérifier qu'il est du MÊME type
         uint8 existingTicketType = userTickets[roundId][msg.sender];
@@ -172,8 +181,11 @@ abstract contract LotteryCore is LotteryConfig, LotteryVRF, ReentrancyGuard, Pau
             revert AlreadyHasTicket(); // Type différent, impossible
         }
         
+        // Calculer le montant total à transférer
+        uint256 totalAmount = ticketPrice * quantity;
+        
         // Transférer les tokens
-        paymentToken.safeTransferFrom(msg.sender, address(this), ticketPrice);
+        paymentToken.safeTransferFrom(msg.sender, address(this), totalAmount);
         
         // Si c'est le premier ticket du joueur pour ce type
         if (existingTicketType == 0) {
@@ -183,11 +195,11 @@ abstract contract LotteryCore is LotteryConfig, LotteryVRF, ReentrancyGuard, Pau
         }
         
         // Mettre à jour les montants
-        ticketTypeStats[roundId][ticketType].totalAmount += ticketPrice;
-        userBetAmounts[roundId][msg.sender] += ticketPrice; // Track montant par joueur
-        round.totalTickets += 1;
+        ticketTypeStats[roundId][ticketType].totalAmount += totalAmount;
+        userBetAmounts[roundId][msg.sender] += totalAmount; // Track montant par joueur
+        round.totalTickets += quantity;
         
-        emit TicketPurchased(roundId, msg.sender, ticketType, ticketPrice);
+        emit TicketPurchased(roundId, msg.sender, ticketType, totalAmount);
     }
 
     /**
@@ -268,22 +280,32 @@ abstract contract LotteryCore is LotteryConfig, LotteryVRF, ReentrancyGuard, Pau
      * @notice Finaliser un round et distribuer les gains PROPORTIONNELLEMENT
      * 
      * Logique de distribution :
-     * 1. Pool total = tout l'argent misé (gagnants + perdants)
+     * 1. Pool total = tout l'argent misé + argent accumulé du round précédent (carryover)
      * 2. Frais trésorerie 2% du pool TOTAL
      * 3. Pool de prize = pool total - frais
      * 4. Pour chaque gagnant : prize = (montant_misé_joueur / montant_total_gagnants) * pool_prize
      * 
+     * SI AUCUN GAGNANT (Option 2 - Jackpot) :
+     * - L'argent du round n'est PAS perdu
+     * - Il s'accumule dans carryoverPool
+     * - Au round suivant, carryoverPool s'ajoute au pool total
+     * - Cela crée un JACKPOT qui grossit jusqu'à ce que quelqu'un gagne
+     * 
      * Exemple :
-     * - Joueur 1 mise 100 sur type 1 (gagnant)
-     * - Joueur 2 mise 200 sur type 1 (gagnant)
-     * - Joueur 3 mise 300 sur type 2 (perdant)
+     * - Round 4: Joueur 1 mise 100 sur type 1, personne n'a type 1
+     *   → 100 va à carryoverPool
+     * - Round 5: Joueur 2 mise 50 sur type 2 (gagnant)
+     *   → Pool total = 50 (mise round 5) + 100 (carryover) = 150
+     *   → Joueur 2 reçoit 150 - fees
      * 
-     * Total pool = 600
-     * Treasury fee = 600 * 2% = 12
-     * Prize pool = 600 - 12 = 588
-     * 
-     * Joueur 1 : (100/300) * 588 = 196 de gain + 100 de mise = 296 total
-     * Joueur 2 : (200/300) * 588 = 392 de gain + 200 de mise = 592 total
+     * Exemple avec frais :
+     * - Round 4: 1 joueur mise 100 sur camp perdant
+     *   → carryoverPool = 100
+     * - Round 5: 1 joueur mise 50 sur camp 1 (gagnant)
+     *   → Pool total = 50 + 100 = 150
+     *   → Treasury fee = 150 * 2% = 3
+     *   → Prize pool = 150 - 3 = 147
+     *   → Joueur reçoit : 50 (mise retour) + 97 (gain) = 147
      */
     function _finalizeRound(uint256 roundId, uint8 winningType) internal {
         Round storage round = rounds[roundId];
@@ -291,19 +313,27 @@ abstract contract LotteryCore is LotteryConfig, LotteryVRF, ReentrancyGuard, Pau
         
         TicketTypeStats storage winningStats = ticketTypeStats[roundId][winningType];
         
-        // Calculer le pool total
-        uint256 totalPool = 0;
+        // Calculer le pool total (mise du round + carryover du précédent)
+        uint256 roundPool = 0;
         for (uint8 i = 1; i <= currentNumberOfTicketTypes; i++) {
-            totalPool += ticketTypeStats[roundId][i].totalAmount;
+            roundPool += ticketTypeStats[roundId][i].totalAmount;
         }
         
-        // Si aucun gagnant, tout va à la trésorerie
+        uint256 totalPool = roundPool + carryoverPool;
+        
+        // === OPTION 2: SI AUCUN GAGNANT, ACCUMULATION DU JACKPOT ===
         if (winningStats.playerCount == 0) {
-            treasuryBalance += totalPool;
+            // L'argent ne disparaît pas, il s'accumule au prochain round
+            carryoverPool = totalPool;
+            
             emit RoundFinalized(roundId, winningType, 0);
             _startNewRound();
             return;
         }
+        
+        // === CAS NORMAL: IL Y A DES GAGNANTS ===
+        // Réinitialiser le carryover (il a été utilisé)
+        carryoverPool = 0;
         
         // Frais de trésorerie (2% du total)
         uint256 treasuryFee = (totalPool * TREASURY_FEE_BPS) / BASIS_POINTS;

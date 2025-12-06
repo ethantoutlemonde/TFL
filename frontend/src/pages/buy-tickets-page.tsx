@@ -11,15 +11,23 @@ interface BuyTicketsPageProps {
   onSuccess: () => void;
 }
 
-const TICKET_TYPES = [
-  { id: 1, name: 'Bronze', multiplier: 1, bgColor: 'bg-amber-500/10', borderColor: 'border-amber-500/20', textColor: 'text-amber-400' },
-  { id: 2, name: 'Silver', multiplier: 2, bgColor: 'bg-zinc-500/10', borderColor: 'border-zinc-400/20', textColor: 'text-zinc-300' },
-  { id: 3, name: 'Gold', multiplier: 5, bgColor: 'bg-yellow-500/10', borderColor: 'border-yellow-500/20', textColor: 'text-yellow-400' },
-  { id: 4, name: 'Diamond', multiplier: 10, bgColor: 'bg-cyan-500/10', borderColor: 'border-cyan-500/20', textColor: 'text-cyan-400' },
+const QUANTITIES = [
+  { id: 1, name: 'Bronze', multiplier: 1, emoji: '🥉' },
+  { id: 2, name: 'Silver', multiplier: 2, emoji: '🥈' },
+  { id: 3, name: 'Gold', multiplier: 5, emoji: '🥇' },
+  { id: 4, name: 'Diamond', multiplier: 10, emoji: '💎' },
+  { id: 5, name: 'Platinum', multiplier: 15, emoji: '👑' },
+  { id: 6, name: 'Legend', multiplier: 20, emoji: '✨' },
+];
+
+const CHOICE_TYPES = [
+  { id: 1, name: 'Pile', emoji: '🎯' },
+  { id: 2, name: 'Face', emoji: '🎲' },
 ];
 
 export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
-  const [selectedTicketType, setSelectedTicketType] = useState(1);
+  const [selectedQuantity, setSelectedQuantity] = useState(1);
+  const [selectedChoice, setSelectedChoice] = useState(1);
   const [needsApproval, setNeedsApproval] = useState(true);
   const { account, isConnecting } = useWallet();
   const address = account ? (account as `0x${string}`) : undefined;
@@ -34,9 +42,11 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
   const { approve, isPending: approveLoading, isSuccess: approveSuccess } = useApproveToken();
   const { buyTicket, isPending: buyLoading, isSuccess: buySuccess, hash: buyHash } = useBuyTicket();
 
-  const selectedType = TICKET_TYPES.find(t => t.id === selectedTicketType) || TICKET_TYPES[0];
-  const ticketCost = ticketPriceRaw ? ticketPriceRaw * BigInt(selectedType.multiplier) : 0n;
-  const ticketCostFormatted = ticketPriceRaw ? parseFloat(ticketPrice) * selectedType.multiplier : 0;
+  const selectedQuantityObj = QUANTITIES.find(q => q.id === selectedQuantity) || QUANTITIES[0];
+  const selectedChoiceObj = CHOICE_TYPES.find(c => c.id === selectedChoice) || CHOICE_TYPES[0];
+  
+  const ticketCost = ticketPriceRaw ? ticketPriceRaw * BigInt(selectedQuantityObj.multiplier) : 0n;
+  const ticketCostFormatted = ticketPriceRaw ? parseFloat(ticketPrice) * selectedQuantityObj.multiplier : 0;
 
   useEffect(() => {
     if (allowanceRaw !== undefined && ticketCost > 0n) {
@@ -61,7 +71,7 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
       const approvalAmount = parseUnits('1000000', 18);
       await approve(approvalAmount);
     } else {
-      await buyTicket(selectedTicketType);
+      await buyTicket(selectedChoice, selectedQuantityObj.multiplier);
     }
   };
 
@@ -133,31 +143,81 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
           <div className="grid lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2">
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="p-8 bg-zinc-900 border border-zinc-800 rounded-3xl mb-6">
-                <h2 className="text-2xl font-black mb-6">Select Ticket Type</h2>
-                <div className="grid md:grid-cols-2 gap-4 mb-8">
-                  {TICKET_TYPES.map((type) => (
-                    <motion.button
-                      key={type.id}
-                      onClick={() => setSelectedTicketType(type.id)}
-                      className={`relative p-6 rounded-2xl border-2 transition-all text-left ${selectedTicketType === type.id ? `${type.bgColor} ${type.borderColor}` : 'bg-zinc-800/50 border-zinc-700 hover:border-zinc-600'}`}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                    >
-                      {selectedTicketType === type.id && (
-                        <div className="absolute top-4 right-4"><Check className={`w-5 h-5 ${type.textColor}`} /></div>
-                      )}
-                      <div className="flex items-center gap-4 mb-4">
-                        <div className={`w-12 h-12 rounded-xl ${type.bgColor} border ${type.borderColor} flex items-center justify-center`}>
-                          <Ticket className={`w-6 h-6 ${type.textColor}`} />
-                        </div>
-                        <div>
-                          <div className={`font-black text-lg ${type.textColor}`}>{type.name}</div>
-                          <div className="text-sm text-zinc-500">{type.multiplier}x multiplier</div>
-                        </div>
-                      </div>
-                      <div className="text-2xl font-black">{isLoading ? '...' : `${(parseFloat(ticketPrice) * type.multiplier).toFixed(2)} TFL`}</div>
-                    </motion.button>
-                  ))}
+                {/* Quantity Selection */}
+                <div className="mb-8">
+                  <h2 className="text-2xl font-black mb-6">Choose Quantity</h2>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {QUANTITIES.map((quantity) => {
+                      const getQuantityClasses = (id: number, isSelected: boolean) => {
+                        if (!isSelected) return 'border-zinc-700 bg-zinc-800/30 hover:border-zinc-600';
+                        switch(id) {
+                          case 1: return 'bg-amber-500/10 border-amber-500/20 border-2';
+                          case 2: return 'bg-slate-500/10 border-slate-500/20 border-2';
+                          case 3: return 'bg-yellow-500/10 border-yellow-500/20 border-2';
+                          case 4: return 'bg-cyan-500/10 border-cyan-500/20 border-2';
+                          default: return '';
+                        }
+                      };
+                      const getQuantityTextColor = (id: number) => {
+                        switch(id) {
+                          case 1: return 'text-amber-400';
+                          case 2: return 'text-slate-300';
+                          case 3: return 'text-yellow-400';
+                          case 4: return 'text-cyan-400';
+                          default: return 'text-zinc-400';
+                        }
+                      };
+                      return (
+                        <motion.button
+                          key={quantity.id}
+                          onClick={() => setSelectedQuantity(quantity.id)}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          className={`p-6 rounded-2xl border-2 transition-all ${getQuantityClasses(quantity.id, selectedQuantity === quantity.id)}`}
+                        >
+                          <div className="text-2xl mb-2">{quantity.emoji}</div>
+                          <div className={`text-lg font-black ${selectedQuantity === quantity.id ? getQuantityTextColor(quantity.id) : 'text-zinc-400'} mb-1`}>{quantity.name}</div>
+                          <div className={`text-sm ${selectedQuantity === quantity.id ? getQuantityTextColor(quantity.id) : 'text-zinc-400'}`}>{quantity.multiplier}x</div>
+                        </motion.button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Choice Selection (Pile/Face) */}
+                <div className="mb-8">
+                  <h2 className="text-2xl font-black mb-6">Choose Your Bet</h2>
+                  <div className="grid grid-cols-2 gap-4">
+                    {CHOICE_TYPES.map((choice) => {
+                      const getChoiceClasses = (id: number, isSelected: boolean) => {
+                        if (!isSelected) return 'border-zinc-700 bg-zinc-800/30 hover:border-zinc-600';
+                        switch(id) {
+                          case 1: return 'bg-green-500/10 border-green-500/20 border-2';
+                          case 2: return 'bg-red-500/10 border-red-500/20 border-2';
+                          default: return '';
+                        }
+                      };
+                      const getChoiceTextColor = (id: number) => {
+                        switch(id) {
+                          case 1: return 'text-green-400';
+                          case 2: return 'text-red-400';
+                          default: return 'text-zinc-400';
+                        }
+                      };
+                      return (
+                        <motion.button
+                          key={choice.id}
+                          onClick={() => setSelectedChoice(choice.id)}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          className={`p-6 rounded-2xl border-2 transition-all ${getChoiceClasses(choice.id, selectedChoice === choice.id)}`}
+                        >
+                          <div className="text-3xl mb-3">{choice.emoji}</div>
+                          <div className={`text-lg font-black ${selectedChoice === choice.id ? getChoiceTextColor(choice.id) : 'text-zinc-400'} mb-1`}>{choice.name}</div>
+                        </motion.button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <div className="p-4 bg-zinc-800/50 border border-zinc-700 rounded-xl mb-6">
@@ -187,7 +247,7 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
 
                 <motion.button
                   onClick={handlePurchase}
-                  disabled={isPurchasing || !hasEnoughBalance || buySuccess}
+                  disabled={isPurchasing || approveLoading || !hasEnoughBalance || buySuccess}
                   className="w-full flex items-center justify-center gap-3 px-8 py-5 bg-white text-black rounded-2xl font-black hover:bg-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
@@ -202,7 +262,7 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
                   ) : needsApproval ? (
                     <><Check className="w-5 h-5" />Approve TFL</>
                   ) : (
-                    <><ShoppingCart className="w-5 h-5" />Buy {selectedType.name}</>
+                    <><ShoppingCart className="w-5 h-5" />Buy Ticket</>
                   )}
                 </motion.button>
 
@@ -253,9 +313,19 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="p-6 bg-zinc-900 border border-zinc-800 rounded-3xl">
                 <h3 className="text-lg font-black mb-4">Your Selection</h3>
                 <div className="space-y-4">
-                  <div><div className="text-sm text-zinc-500">Type</div><div className={`text-2xl font-black ${selectedType.textColor}`}>{selectedType.name}</div></div>
-                  <div><div className="text-sm text-zinc-500">Cost</div><div className="text-2xl font-black">{ticketCostFormatted.toFixed(2)} TFL</div></div>
-                  <div><div className="text-sm text-zinc-500">Multiplier</div><div className="text-2xl font-black">{selectedType.multiplier}x</div></div>
+                  <div>
+                    <div className="text-sm text-zinc-500">Quantity</div>
+                    <div className={`text-2xl font-black ${selectedQuantity === 1 ? 'text-amber-400' : selectedQuantity === 2 ? 'text-slate-300' : selectedQuantity === 3 ? 'text-yellow-400' : 'text-cyan-400'}`}>
+                      {selectedQuantityObj.name} ({selectedQuantityObj.multiplier}x)
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-zinc-500">Bet</div>
+                    <div className={`text-2xl font-black ${selectedChoice === 1 ? 'text-green-400' : 'text-red-400'}`}>
+                      {selectedChoiceObj.name}
+                    </div>
+                  </div>
+                  <div><div className="text-sm text-zinc-500">Total Cost</div><div className="text-2xl font-black text-green-400">{ticketCostFormatted.toFixed(2)} TFL</div></div>
                 </div>
               </motion.div>
 

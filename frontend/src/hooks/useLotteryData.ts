@@ -45,6 +45,10 @@ export function useLotteryInfo() {
         functionName: 'paused',
       },
     ],
+    query: {
+      staleTime: Infinity, // Données restent fraîches jusqu'au refetch manuel
+      gcTime: 1000 * 60 * 5, // 5 minutes avant suppression du cache
+    },
   });
 
   return {
@@ -163,7 +167,7 @@ export function usePlayerTicket(roundId: number, playerAddress: string | undefin
  * (Plus rapide que de fetcher tous les rounds)
  */
 export function usePlayerAllTickets(playerAddress: string | undefined, currentRoundId: number) {
-  // Fetcher juste le round courant pour être rapide
+  // Récupérer le type de ticket du joueur
   const { data: ticketType, isLoading: ticketsLoading, error: ticketsError, refetch: refetchTickets } = useReadContract({
     address: LOTTERY_ADDRESS as `0x${string}`,
     abi: lotteryAbi,
@@ -171,9 +175,12 @@ export function usePlayerAllTickets(playerAddress: string | undefined, currentRo
     args: playerAddress ? [BigInt(currentRoundId), playerAddress as `0x${string}`] : undefined,
     query: {
       enabled: !!playerAddress && currentRoundId > 0,
+      staleTime: 1000 * 30, // 30 secondes avant refetch automatique
+      gcTime: 1000 * 60 * 5, // Cache pendant 5 minutes
     },
   });
 
+  // Récupérer le montant du pari (= quantité de tickets)
   const { data: betAmount, isLoading: betLoading, error: betError, refetch: refetchBet } = useReadContract({
     address: LOTTERY_ADDRESS as `0x${string}`,
     abi: lotteryAbi,
@@ -181,15 +188,38 @@ export function usePlayerAllTickets(playerAddress: string | undefined, currentRo
     args: playerAddress ? [BigInt(currentRoundId), playerAddress as `0x${string}`] : undefined,
     query: {
       enabled: !!playerAddress && currentRoundId > 0,
+      staleTime: Infinity, // Pas de refetch auto
+      gcTime: 1000 * 60 * 5, // 5 min avant suppression du cache
+    },
+  });
+
+  // Récupérer le prix du ticket pour calculer la quantité
+  const { data: ticketPriceData, isLoading: priceLoading } = useReadContract({
+    address: LOTTERY_ADDRESS as `0x${string}`,
+    abi: lotteryAbi,
+    functionName: 'ticketPrice',
+    query: {
+      enabled: !!playerAddress && currentRoundId > 0,
+      staleTime: Infinity, // Prix ne change pas, pas besoin de refetch auto
+      gcTime: 1000 * 60 * 5, // 5 min avant suppression du cache
     },
   });
 
   const ticketTypeNum = ticketType as number | undefined;
   const betAmountBigint = betAmount as bigint | undefined;
+  const ticketPriceBigint = ticketPriceData as bigint | undefined;
 
+  // Calculer la quantité = montant total / prix unitaire
+  let quantity = 1;
+  if (betAmountBigint && ticketPriceBigint && ticketPriceBigint > 0n) {
+    quantity = Number(betAmountBigint / ticketPriceBigint);
+  }
+
+  // Créer un ticket unique avec la quantité
   const tickets = ticketTypeNum && ticketTypeNum > 0 ? [{
     roundId: currentRoundId,
     ticketType: ticketTypeNum,
+    quantity: quantity,
     amount: betAmountBigint ? formatUnits(betAmountBigint, 18) : '0',
     amountRaw: betAmountBigint ?? 0n,
     hasTicket: true,
@@ -202,7 +232,7 @@ export function usePlayerAllTickets(playerAddress: string | undefined, currentRo
 
   return { 
     tickets, 
-    isLoading: ticketsLoading || betLoading, 
+    isLoading: ticketsLoading || betLoading || priceLoading, 
     error: ticketsError || betError, 
     refetch: refetchTickets_combined 
   };
@@ -234,12 +264,12 @@ export function useBuyTicket() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
-  const buyTicket = (ticketType: number) => {
+  const buyTicket = (ticketType: number, quantity: number = 1) => {
     writeContract({
       address: LOTTERY_ADDRESS as `0x${string}`,
       abi: LotteryABI,
       functionName: 'buyTicket',
-      args: [ticketType],
+      args: [ticketType, quantity],
     });
   };
 
@@ -340,4 +370,98 @@ export function useFinalizedRounds(currentRoundId: number, limit: number = 10) {
   }).filter(r => r.isFinalized) ?? [];
 
   return { rounds, isLoading, error, refetch };
+}
+
+/**
+ * Hook pour récupérer les tickets historiques du joueur pour TOUS les rounds
+ * Boucle sur les rounds passés et récupère les infos du joueur
+ */
+export function usePlayerHistoricalTickets(playerAddress: string | undefined, currentRoundId: number) {
+  // On va récupérer les infos pour chaque round passé
+  // Pour simplifier, on va faire des queries pour les derniers N rounds (ex: 10)
+  const maxPastRounds = 10;
+  const startRound = Math.max(1, currentRoundId - maxPastRounds);
+  
+  const roundIds = Array.from({ length: currentRoundId - startRound }, (_, i) => startRound + i);
+
+  // Récupérer les types de tickets pour tous les rounds
+  const ticketsData = useReadContracts({
+    contracts: roundIds.map(roundId => ({
+      address: LOTTERY_ADDRESS as `0x${string}`,
+      abi: lotteryAbi,
+      functionName: 'userTickets',
+      args: playerAddress ? [BigInt(roundId), playerAddress as `0x${string}`] : undefined,
+    })),
+    query: {
+      enabled: !!playerAddress && roundIds.length > 0,
+      staleTime: Infinity,
+      gcTime: 1000 * 60 * 10, // 10 min cache
+    },
+  });
+
+  // Récupérer les montants de paris pour tous les rounds
+  const betAmountsData = useReadContracts({
+    contracts: roundIds.map(roundId => ({
+      address: LOTTERY_ADDRESS as `0x${string}`,
+      abi: lotteryAbi,
+      functionName: 'userBetAmounts',
+      args: playerAddress ? [BigInt(roundId), playerAddress as `0x${string}`] : undefined,
+    })),
+    query: {
+      enabled: !!playerAddress && roundIds.length > 0,
+      staleTime: Infinity,
+      gcTime: 1000 * 60 * 10,
+    },
+  });
+
+  // Récupérer le prix du ticket une fois
+  const { data: ticketPriceData } = useReadContract({
+    address: LOTTERY_ADDRESS as `0x${string}`,
+    abi: lotteryAbi,
+    functionName: 'ticketPrice',
+    query: {
+      enabled: !!playerAddress,
+      staleTime: Infinity,
+      gcTime: 1000 * 60 * 10,
+    },
+  });
+
+  const ticketPriceBigint = ticketPriceData as bigint | undefined;
+
+  // Combiner les données
+  const tickets = roundIds
+    .map((roundId, index) => {
+      const ticketType = ticketsData.data?.[index]?.result as number | undefined;
+      const betAmount = betAmountsData.data?.[index]?.result as bigint | undefined;
+
+      if (!ticketType || ticketType === 0 || !betAmount) {
+        return null;
+      }
+
+      // Calculer la quantité
+      let quantity = 1;
+      if (ticketPriceBigint && ticketPriceBigint > 0n) {
+        quantity = Number(betAmount / ticketPriceBigint);
+      }
+
+      return {
+        roundId,
+        ticketType,
+        quantity,
+        amount: formatUnits(betAmount, 18),
+        amountRaw: betAmount,
+        hasTicket: true,
+      };
+    })
+    .filter((t): t is NonNullable<typeof t> => t !== null);
+
+  return {
+    tickets,
+    isLoading: ticketsData.isLoading || betAmountsData.isLoading,
+    error: ticketsData.error || betAmountsData.error,
+    refetch: async () => {
+      await ticketsData.refetch();
+      await betAmountsData.refetch();
+    },
+  };
 }
