@@ -5,7 +5,7 @@ import "forge-std/Test.sol";
 import "../src/Lottery.sol";
 import "../src/LotteryTypes.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@chainlink/src/v0.8/vrf/mocks/VRFCoordinatorV2Mock.sol";
+import "./mocks/VRFCoordinatorV2_5MockSimple.sol";
 
 /**
  * @title Mock ERC20 pour les tests
@@ -26,7 +26,7 @@ contract MockERC20 is ERC20 {
 contract LotteryTest is Test {
     Lottery public lottery;
     MockERC20 public token;
-    VRFCoordinatorV2Mock public vrfCoordinator;
+    VRFCoordinatorV2_5MockSimple public vrfCoordinator;
 
     address public owner = address(this);
     address public treasury = address(0x1234);
@@ -35,26 +35,24 @@ contract LotteryTest is Test {
     address public player3 = address(0x3);
     address public player4 = address(0x4);
 
-    uint256 public constant TICKET_PRICE = 5 * 10**18; // 5 tokens
+    uint256 public constant TICKET_PRICE = 1 * 10**18; // 1 token (valeur par défaut du contrat)
     uint8 public constant NUM_TICKET_TYPES = 3; // 3 camps
     uint256 public constant ROUND_DURATION = 86400; // 24h
     
-    // Paramètres VRF Mock
-    uint96 public constant BASE_FEE = 100000000000000000; // 0.1 LINK
-    uint96 public constant GAS_PRICE_LINK = 1000000000; // 1 gwei in LINK
-    uint64 public subId;
+    // Paramètres VRF Mock v2.5
+    uint256 public subId;
 
     function setUp() public {
         // Déployer le token mock
         token = new MockERC20();
 
-        // Déployer le VRF coordinator mock
-        vrfCoordinator = new VRFCoordinatorV2Mock(BASE_FEE, GAS_PRICE_LINK);
+        // Déployer le VRF coordinator mock v2.5 simple
+        vrfCoordinator = new VRFCoordinatorV2_5MockSimple();
         
-        // Créer une souscription
+        // Créer une souscription (retourne uint256 pour v2.5)
         subId = vrfCoordinator.createSubscription();
         
-        // Financer la souscription avec 10 LINK
+        // Financer la souscription (mock - ne fait rien)
         vrfCoordinator.fundSubscription(subId, 10 * 10**18);
 
         // Déployer le contrat Lottery
@@ -62,7 +60,7 @@ contract LotteryTest is Test {
             address(token),
             treasury,
             address(vrfCoordinator),
-            subId,
+            subId,  // uint256 pour v2.5
             bytes32(uint256(1)) // key hash
         );
         

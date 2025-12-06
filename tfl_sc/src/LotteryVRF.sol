@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@chainlink/src/v0.8/vrf/VRFConsumerBaseV2.sol";
-import "@chainlink/src/v0.8/vrf/interfaces/VRFCoordinatorV2Interface.sol";
+import {IVRFCoordinatorV2Plus} from "@chainlink/src/v0.8/vrf/dev/interfaces/IVRFCoordinatorV2Plus.sol";
+import {VRFV2PlusClient} from "@chainlink/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
 import {Round, VRFRequestNotFound, RoundAlreadyFinalized} from "./LotteryTypes.sol";
 
 /**
  * @title LotteryVRF
- * @notice 🎲 INTÉGRATION VRF - Gère la randomité via Chainlink VRF
+ * @notice 🎲 INTÉGRATION VRF v2.5 - Gère la randomité via Chainlink VRF
  * 
  * RÔLE DU FICHIER :
  * =================
@@ -15,19 +15,25 @@ import {Round, VRFRequestNotFound, RoundAlreadyFinalized} from "./LotteryTypes.s
  * du code. Il n'y a aucune logique métier ici, JUSTE l'intégration VRF.
  * Pattern utilisé par tous les protocoles (Chainlink, Band, Pyth).
  * 
+ * VERSION VRF v2.5 :
+ * ==================
+ * ⚠️  Cette version utilise VRF v2.5 avec subscriptionId en uint256
+ *     (au lieu de uint64 pour VRF v2 classique)
+ * 
  * 1️⃣  CONSTANTS IMMUABLES (déployement uniquement)
  *   - vrfCoordinator : adresse du coordinateur Chainlink
- *   - subscriptionId : ID de la subscription (funding)
+ *   - subscriptionId : ID de la subscription (uint256 pour v2.5)
  *   - keyHash : paramètre réseau (gas lane)
  *   → Marquées immutable = pas modifiables après déploiement
  * 
  * 2️⃣  DEMANDER DE LA RANDOMITÉ
  *   - _requestRandomness(uint256 roundId) : fonction interne
  *   → Demande 1 nombre aléatoire au coordinateur Chainlink
- *   → Le réseau va appeler fulfillRandomWords() plus tard
+ *   → Le réseau va appeler rawFulfillRandomWords() plus tard
  * 
  * 3️⃣  RECEVOIR LA RÉPONSE (Callback)
- *   - fulfillRandomWords(uint256, uint256[] memory) : callback Chainlink
+ *   - rawFulfillRandomWords() : callback Chainlink (entry point)
+ *   - fulfillRandomWords() : traitement interne
  *   → Appelé automatiquement par Chainlink 3 blocs après la demande
  *   → Trouve le round correspondant
  *   → Appelle _handleRandomWords() (implémentée dans LotteryCore)
@@ -52,10 +58,13 @@ import {Round, VRFRequestNotFound, RoundAlreadyFinalized} from "./LotteryTypes.s
  * ✅ LotteryCore (hérite de LotteryVRF)
  * ✅ Lottery (hérite indirectement via LotteryCore)
  */
-abstract contract LotteryVRF is VRFConsumerBaseV2 {
+abstract contract LotteryVRF {
     
-    VRFCoordinatorV2Interface public immutable vrfCoordinator;
-    uint64 public immutable subscriptionId;
+    /// @notice Erreur si l'appelant n'est pas le VRF Coordinator
+    error OnlyCoordinatorCanFulfill(address have, address want);
+    
+    IVRFCoordinatorV2Plus public immutable vrfCoordinator;
+    uint256 public immutable subscriptionId;  // uint256 pour VRF v2.5
     bytes32 public immutable keyHash;
     uint32 public callbackGasLimit = 500000;
     
@@ -72,27 +81,33 @@ abstract contract LotteryVRF is VRFConsumerBaseV2 {
 
     constructor(
         address _vrfCoordinator,
-        uint64 _subscriptionId,
+        uint256 _subscriptionId,  // uint256 pour VRF v2.5
         bytes32 _keyHash
-    ) VRFConsumerBaseV2(_vrfCoordinator) {
-        vrfCoordinator = VRFCoordinatorV2Interface(_vrfCoordinator);
+    ) {
+        vrfCoordinator = IVRFCoordinatorV2Plus(_vrfCoordinator);
         subscriptionId = _subscriptionId;
         keyHash = _keyHash;
     }
 
     /**
-     * @notice Demander un nombre aléatoire via Chainlink VRF
+     * @notice Demander un nombre aléatoire via Chainlink VRF v2.5
      */
     function _requestRandomness(uint256 roundId) internal {
         Round storage round = rounds[roundId];
         if (round.isFinalized) revert RoundAlreadyFinalized();
         
+        // VRF v2.5 utilise une struct pour la requête
         uint256 requestId = vrfCoordinator.requestRandomWords(
-            keyHash,
-            subscriptionId,
-            REQUEST_CONFIRMATIONS,
-            callbackGasLimit,
-            NUM_WORDS
+            VRFV2PlusClient.RandomWordsRequest({
+                keyHash: keyHash,
+                subId: subscriptionId,
+                requestConfirmations: REQUEST_CONFIRMATIONS,
+                callbackGasLimit: callbackGasLimit,
+                numWords: NUM_WORDS,
+                extraArgs: VRFV2PlusClient._argsToBytes(
+                    VRFV2PlusClient.ExtraArgsV1({nativePayment: false})
+                )
+            })
         );
         
         round.vrfRequestId = requestId;
@@ -102,9 +117,20 @@ abstract contract LotteryVRF is VRFConsumerBaseV2 {
     }
 
     /**
-     * @notice Callback appelé par Chainlink VRF avec le nombre aléatoire
+     * @notice Entry point pour le callback VRF - appelé par le Coordinator
+     * @dev Vérifie que l'appelant est bien le VRF Coordinator
      */
-    function fulfillRandomWords(uint256 requestId, uint256[] memory randomWords) internal override {
+    function rawFulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) external {
+        if (msg.sender != address(vrfCoordinator)) {
+            revert OnlyCoordinatorCanFulfill(msg.sender, address(vrfCoordinator));
+        }
+        fulfillRandomWords(requestId, randomWords);
+    }
+
+    /**
+     * @notice Callback interne pour traiter le nombre aléatoire
+     */
+    function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal {
         uint256 roundId = vrfRequestToRound[requestId];
         if (roundId == 0) revert VRFRequestNotFound();
         

@@ -51,6 +51,44 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const switchToSepolia = async () => {
+    if (typeof window === 'undefined' || !window.ethereum) return;
+    
+    try {
+      // Try to switch to Sepolia (chainId: 0xaa36a7)
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: '0xaa36a7' }], // Sepolia chain ID
+      });
+    } catch (error: any) {
+      // If chain doesn't exist, add it
+      if (error.code === 4902) {
+        try {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [
+              {
+                chainId: '0xaa36a7',
+                chainName: 'Sepolia',
+                rpcUrls: ['https://ethereum-sepolia-rpc.publicnode.com'],
+                nativeCurrency: {
+                  name: 'Sepolia ETH',
+                  symbol: 'ETH',
+                  decimals: 18,
+                },
+                blockExplorerUrls: ['https://sepolia.etherscan.io'],
+              },
+            ],
+          });
+        } catch (addError) {
+          console.error('Error adding Sepolia network:', addError);
+        }
+      } else {
+        console.error('Error switching to Sepolia:', error);
+      }
+    }
+  };
+
   const connect = async () => {
     if (typeof window === 'undefined' || !window.ethereum) {
       alert('Please install MetaMask to use this feature');
@@ -62,6 +100,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const accounts = await window.ethereum.request({
         method: 'eth_requestAccounts',
       });
+      
+      // Switch to Sepolia after connecting
+      await switchToSepolia();
+      
       setAccount(accounts[0]);
     } catch (error: any) {
       console.error('Error connecting wallet:', error);

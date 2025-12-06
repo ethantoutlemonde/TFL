@@ -1,179 +1,193 @@
 "use client";
 
 import { motion } from "motion/react";
-import { Minus, Plus, Ticket, ShoppingCart, AlertCircle, Info, TrendingUp, Users } from "lucide-react";
-import { useState } from "react";
-import { useWallet } from "../hooks/useWallet";
+import { Ticket, ShoppingCart, AlertCircle, Info, TrendingUp, Users, Check, Wallet, Coins } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useWallet } from '../hooks/useWallet';
+import { useLotteryInfo, useRoundInfo, useBuyTicket, useApproveToken, useTokenAllowance, useTokenBalance } from '../hooks/useLotteryData';
+import { parseUnits } from 'viem';
 
 interface BuyTicketsPageProps {
   onSuccess: () => void;
 }
 
+const TICKET_TYPES = [
+  { id: 1, name: 'Bronze', multiplier: 1, bgColor: 'bg-amber-500/10', borderColor: 'border-amber-500/20', textColor: 'text-amber-400' },
+  { id: 2, name: 'Silver', multiplier: 2, bgColor: 'bg-zinc-500/10', borderColor: 'border-zinc-400/20', textColor: 'text-zinc-300' },
+  { id: 3, name: 'Gold', multiplier: 5, bgColor: 'bg-yellow-500/10', borderColor: 'border-yellow-500/20', textColor: 'text-yellow-400' },
+  { id: 4, name: 'Diamond', multiplier: 10, bgColor: 'bg-cyan-500/10', borderColor: 'border-cyan-500/20', textColor: 'text-cyan-400' },
+];
+
 export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
-  const [ticketCount, setTicketCount] = useState(1);
-  const [isPurchasing, setIsPurchasing] = useState(false);
-  const { account, connect } = useWallet();
+  const [selectedTicketType, setSelectedTicketType] = useState(1);
+  const [needsApproval, setNeedsApproval] = useState(true);
+  const { account, isConnecting } = useWallet();
+  const address = account ? (account as `0x${string}`) : undefined;
+  const isConnected = !!account;
 
-  const ticketPrice = 0.01;
-  const totalCost = ticketPrice * ticketCount;
-  const gasFee = 0.0015; // Estimated
-  const totalWithGas = totalCost + gasFee;
+  const { currentRoundId, ticketPrice, ticketPriceRaw, isLoading: lotteryLoading } = useLotteryInfo();
+  const { endTime, numberOfTickets, totalPrize, isLoading: roundLoading } = useRoundInfo(currentRoundId);
+  
+  const { balance: balanceRaw, balanceFormatted, isLoading: balanceLoading } = useTokenBalance(address);
+  const { allowance: allowanceRaw, isLoading: allowanceLoading, refetch: refetchAllowance } = useTokenAllowance(address);
+  
+  const { approve, isPending: approveLoading, isSuccess: approveSuccess } = useApproveToken();
+  const { buyTicket, isPending: buyLoading, isSuccess: buySuccess, hash: buyHash } = useBuyTicket();
 
-  const currentDraw = {
-    id: 48,
-    prizePool: 2847.65,
-    participants: 1847,
-    drawDate: "Oct 15, 2025",
-    daysLeft: 14,
-  };
+  const selectedType = TICKET_TYPES.find(t => t.id === selectedTicketType) || TICKET_TYPES[0];
+  const ticketCost = ticketPriceRaw ? ticketPriceRaw * BigInt(selectedType.multiplier) : 0n;
+  const ticketCostFormatted = ticketPriceRaw ? parseFloat(ticketPrice) * selectedType.multiplier : 0;
 
-  const increaseCount = () => {
-    if (ticketCount < 100) setTicketCount(ticketCount + 1);
-  };
+  useEffect(() => {
+    if (allowanceRaw !== undefined && ticketCost > 0n) {
+      setNeedsApproval(allowanceRaw < ticketCost);
+    }
+  }, [allowanceRaw, ticketCost]);
 
-  const decreaseCount = () => {
-    if (ticketCount > 1) setTicketCount(ticketCount - 1);
-  };
+  useEffect(() => {
+    if (approveSuccess) {
+      setTimeout(() => refetchAllowance(), 2000);
+    }
+  }, [approveSuccess, refetchAllowance]);
+
+  useEffect(() => {
+    if (buySuccess) {
+      setTimeout(() => onSuccess(), 2000);
+    }
+  }, [buySuccess, onSuccess]);
 
   const handlePurchase = async () => {
-    if (!account) {
-      await connect();
-      return;
+    if (needsApproval) {
+      const approvalAmount = parseUnits('1000000', 18);
+      await approve(approvalAmount);
+    } else {
+      await buyTicket(selectedTicketType);
     }
-
-    setIsPurchasing(true);
-    
-    // Simulate blockchain transaction
-    setTimeout(() => {
-      setIsPurchasing(false);
-      onSuccess();
-    }, 3000);
   };
+
+  const hasEnoughBalance = balanceRaw !== undefined && ticketCost > 0n && balanceRaw >= ticketCost;
+  const isLoading = lotteryLoading || roundLoading || balanceLoading || allowanceLoading;
+  const isPurchasing = approveLoading || buyLoading;
+
+  const now = Math.floor(Date.now() / 1000);
+  const timeRemaining = Math.max(0, endTime - now);
+  const minutesRemaining = Math.floor(timeRemaining / 60);
+  const secondsRemaining = timeRemaining % 60;
+
+  if (!isConnected) {
+    return (
+      <div className="min-h-screen pt-20">
+        <section className="relative py-20 px-6 overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-b from-black via-zinc-950 to-black" />
+          <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-indigo-500/20 rounded-full blur-[128px]" />
+          <div className="relative z-10 container mx-auto max-w-7xl text-center py-20">
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
+              <div className="w-24 h-24 mx-auto mb-8 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center">
+                <Wallet className="w-12 h-12 text-zinc-500" />
+              </div>
+              <h1 className="text-4xl font-black tracking-tighter mb-4">Connect Your Wallet</h1>
+              <p className="text-xl text-zinc-400 max-w-2xl mx-auto">Connect your wallet to purchase lottery tickets</p>
+            </motion.div>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen pt-20">
-      {/* Hero Section */}
       <section className="relative py-20 px-6 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-b from-black via-zinc-950 to-black" />
         <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-indigo-500/20 rounded-full blur-[128px]" />
-
         <div className="relative z-10 container mx-auto max-w-7xl">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-          >
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
             <div className="inline-block px-4 py-2 mb-6 rounded-full border border-zinc-800 bg-zinc-900/50 backdrop-blur-sm">
-              <span className="text-sm text-zinc-400">Current Draw</span>
+              <span className="text-sm text-zinc-400">Round #{currentRoundId}</span>
             </div>
-            <h1 className="text-5xl md:text-7xl font-black tracking-tighter mb-6">
-              Buy Tickets
-            </h1>
-            <p className="text-xl text-zinc-400 max-w-2xl">
-              Enter the draw for a chance to win {currentDraw.prizePool.toFixed(2)} ETH
-            </p>
+            <h1 className="text-5xl md:text-7xl font-black tracking-tighter mb-6">Buy Tickets</h1>
+            <p className="text-xl text-zinc-400 max-w-2xl">Choose your ticket type and enter the draw!</p>
           </motion.div>
         </div>
       </section>
 
-      {/* Main Content */}
+      {buySuccess && (
+        <section className="relative py-4 px-6">
+          <div className="container mx-auto max-w-7xl">
+            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="p-6 bg-gradient-to-r from-green-500/20 to-cyan-500/20 border border-green-500/30 rounded-2xl">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
+                  <Check className="w-6 h-6 text-green-400" />
+                </div>
+                <div>
+                  <div className="text-lg font-bold text-green-400">Ticket Purchased!</div>
+                  <div className="text-sm text-zinc-400">Tx: {buyHash?.slice(0, 10)}...{buyHash?.slice(-8)}</div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        </section>
+      )}
+
       <section className="relative py-12 px-6">
         <div className="container mx-auto max-w-7xl">
           <div className="grid lg:grid-cols-3 gap-8">
-            {/* Left Column - Purchase Form */}
             <div className="lg:col-span-2">
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6 }}
-                className="p-8 bg-zinc-900 border border-zinc-800 rounded-3xl mb-6"
-              >
-                <h2 className="text-2xl font-black mb-6">Select Number of Tickets</h2>
-
-                {/* Ticket Counter */}
-                <div className="mb-8">
-                  <div className="flex items-center justify-center gap-6 mb-6">
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="p-8 bg-zinc-900 border border-zinc-800 rounded-3xl mb-6">
+                <h2 className="text-2xl font-black mb-6">Select Ticket Type</h2>
+                <div className="grid md:grid-cols-2 gap-4 mb-8">
+                  {TICKET_TYPES.map((type) => (
                     <motion.button
-                      onClick={decreaseCount}
-                      disabled={ticketCount <= 1}
-                      className="w-16 h-16 rounded-2xl bg-zinc-800 border border-zinc-700 flex items-center justify-center hover:bg-zinc-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
+                      key={type.id}
+                      onClick={() => setSelectedTicketType(type.id)}
+                      className={`relative p-6 rounded-2xl border-2 transition-all text-left ${selectedTicketType === type.id ? `${type.bgColor} ${type.borderColor}` : 'bg-zinc-800/50 border-zinc-700 hover:border-zinc-600'}`}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
                     >
-                      <Minus className="w-6 h-6" />
+                      {selectedTicketType === type.id && (
+                        <div className="absolute top-4 right-4"><Check className={`w-5 h-5 ${type.textColor}`} /></div>
+                      )}
+                      <div className="flex items-center gap-4 mb-4">
+                        <div className={`w-12 h-12 rounded-xl ${type.bgColor} border ${type.borderColor} flex items-center justify-center`}>
+                          <Ticket className={`w-6 h-6 ${type.textColor}`} />
+                        </div>
+                        <div>
+                          <div className={`font-black text-lg ${type.textColor}`}>{type.name}</div>
+                          <div className="text-sm text-zinc-500">{type.multiplier}x multiplier</div>
+                        </div>
+                      </div>
+                      <div className="text-2xl font-black">{isLoading ? '...' : `${(parseFloat(ticketPrice) * type.multiplier).toFixed(2)} TFL`}</div>
                     </motion.button>
-
-                    <div className="text-center">
-                      <div className="text-6xl font-black mb-2">{ticketCount}</div>
-                      <div className="text-sm text-zinc-500">Ticket{ticketCount > 1 ? 's' : ''}</div>
-                    </div>
-
-                    <motion.button
-                      onClick={increaseCount}
-                      disabled={ticketCount >= 100}
-                      className="w-16 h-16 rounded-2xl bg-zinc-800 border border-zinc-700 flex items-center justify-center hover:bg-zinc-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      <Plus className="w-6 h-6" />
-                    </motion.button>
-                  </div>
-
-                  {/* Quick select buttons */}
-                  <div className="flex gap-3 justify-center">
-                    {[1, 5, 10, 25].map((count) => (
-                      <button
-                        key={count}
-                        onClick={() => setTicketCount(count)}
-                        className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
-                          ticketCount === count
-                            ? 'bg-indigo-500 text-white'
-                            : 'bg-zinc-800 border border-zinc-700 hover:bg-zinc-700'
-                        }`}
-                      >
-                        {count}
-                      </button>
-                    ))}
-                  </div>
+                  ))}
                 </div>
 
-                {/* Price Breakdown */}
-                <div className="space-y-3 p-6 bg-zinc-800/50 border border-zinc-700 rounded-2xl mb-6">
-                  <div className="flex justify-between items-center">
-                    <span className="text-zinc-400">Ticket Price</span>
-                    <span className="font-semibold">{ticketPrice} ETH × {ticketCount}</span>
+                <div className="p-4 bg-zinc-800/50 border border-zinc-700 rounded-xl mb-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Coins className="w-5 h-5 text-indigo-400" />
+                      <span className="text-zinc-400">Your TFL Balance</span>
+                    </div>
+                    <span className={`font-bold ${hasEnoughBalance ? 'text-green-400' : 'text-red-400'}`}>
+                      {isLoading ? '...' : `${parseFloat(balanceFormatted).toFixed(4)} TFL`}
+                    </span>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-zinc-400">Subtotal</span>
-                    <span className="font-semibold">{totalCost.toFixed(4)} ETH</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-zinc-400">Estimated Gas Fee</span>
-                    <span className="font-semibold">{gasFee.toFixed(4)} ETH</span>
-                  </div>
-                  <div className="h-px bg-zinc-700 my-2" />
-                  <div className="flex justify-between items-center">
-                    <span className="text-lg font-black">Total</span>
-                    <div className="text-right">
-                      <div className="text-2xl font-black">{totalWithGas.toFixed(4)} ETH</div>
-                      <div className="text-sm text-zinc-500">≈ ${(totalWithGas * 3200).toFixed(2)} USD</div>
+                  {!hasEnoughBalance && !isLoading && (
+                    <div className="mt-2 text-sm text-red-400">Insufficient balance. Need {ticketCostFormatted.toFixed(2)} TFL.</div>
+                  )}
+                </div>
+
+                {needsApproval && hasEnoughBalance && (
+                  <div className="flex items-start gap-3 p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl mb-6">
+                    <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                    <div className="text-sm text-amber-200/90">
+                      <p className="font-semibold mb-1">Approval Required</p>
+                      <p>Approve the lottery contract to spend your TFL tokens.</p>
                     </div>
                   </div>
-                </div>
+                )}
 
-                {/* Warning */}
-                <div className="flex items-start gap-3 p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl mb-6">
-                  <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-                  <div className="text-sm text-amber-200/90">
-                    <p className="font-semibold mb-1">Please note:</p>
-                    <p>All ticket purchases are final and non-refundable. Make sure you have enough ETH in your wallet to cover the total cost including gas fees.</p>
-                  </div>
-                </div>
-
-                {/* Purchase Button */}
                 <motion.button
                   onClick={handlePurchase}
-                  disabled={isPurchasing}
+                  disabled={isPurchasing || !hasEnoughBalance || buySuccess}
                   className="w-full flex items-center justify-center gap-3 px-8 py-5 bg-white text-black rounded-2xl font-black hover:bg-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
@@ -181,136 +195,80 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
                   {isPurchasing ? (
                     <>
                       <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin" />
-                      Processing Transaction...
+                      {approveLoading ? 'Approving...' : 'Purchasing...'}
                     </>
-                  ) : account ? (
-                    <>
-                      <ShoppingCart className="w-5 h-5" />
-                      Purchase {ticketCount} Ticket{ticketCount > 1 ? 's' : ''}
-                    </>
+                  ) : buySuccess ? (
+                    <><Check className="w-5 h-5" />Purchased!</>
+                  ) : needsApproval ? (
+                    <><Check className="w-5 h-5" />Approve TFL</>
                   ) : (
-                    <>
-                      Connect Wallet to Continue
-                    </>
+                    <><ShoppingCart className="w-5 h-5" />Buy {selectedType.name}</>
                   )}
                 </motion.button>
+
+                {approveSuccess && !buySuccess && (
+                  <div className="mt-4 text-center text-sm text-green-400">Approved! Click to purchase.</div>
+                )}
               </motion.div>
 
-              {/* Info Card */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.1 }}
-                className="p-6 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl"
-              >
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="p-6 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
                 <div className="flex items-start gap-3">
                   <Info className="w-5 h-5 text-indigo-400 flex-shrink-0 mt-0.5" />
                   <div className="text-sm text-zinc-300">
                     <p className="font-semibold mb-2">How it works:</p>
                     <ul className="space-y-1 list-disc list-inside text-zinc-400">
-                      <li>Each ticket costs {ticketPrice} ETH and gives you one entry into the draw</li>
-                      <li>Winner is selected using Chainlink VRF for provably fair randomness</li>
-                      <li>Prize is automatically transferred to winner's wallet</li>
-                      <li>All transactions are verifiable on the blockchain</li>
+                      <li>Choose a ticket type</li>
+                      <li>Winner selected via Chainlink VRF</li>
+                      <li>Share pool with other winners</li>
                     </ul>
                   </div>
                 </div>
               </motion.div>
             </div>
 
-            {/* Right Column - Draw Info */}
             <div className="space-y-6">
-              {/* Current Draw Card */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.2 }}
-                className="p-6 bg-gradient-to-br from-indigo-500/10 via-violet-500/10 to-cyan-500/10 border border-zinc-800 rounded-3xl"
-              >
-                <div className="text-sm text-zinc-500 mb-2 tracking-wider uppercase">Draw #{currentDraw.id}</div>
-                <h3 className="text-3xl font-black mb-6">Current Jackpot</h3>
-                
-                <div className="mb-6">
-                  <div className="text-5xl font-black mb-2 bg-gradient-to-r from-white to-zinc-400 bg-clip-text text-transparent">
-                    {currentDraw.prizePool.toFixed(2)}
-                  </div>
-                  <div className="text-xl text-zinc-400">ETH</div>
-                  <div className="text-sm text-zinc-500 mt-1">
-                    ≈ ${(currentDraw.prizePool * 3200).toLocaleString()} USD
-                  </div>
-                </div>
-
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="p-6 bg-gradient-to-br from-indigo-500/10 via-violet-500/10 to-cyan-500/10 border border-zinc-800 rounded-3xl">
+                <div className="text-sm text-zinc-500 mb-2 tracking-wider uppercase">Round #{currentRoundId}</div>
+                <h3 className="text-3xl font-black mb-6">Prize Pool</h3>
+                <div className="text-4xl font-black mb-2 bg-gradient-to-r from-white to-zinc-400 bg-clip-text text-transparent">{roundLoading ? '...' : totalPrize}</div>
+                <div className="text-xl text-zinc-400 mb-6">TFL</div>
                 <div className="space-y-4">
                   <div className="p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl">
                     <div className="flex items-center gap-3 mb-2">
                       <Users className="w-4 h-4 text-indigo-400" />
-                      <span className="text-sm text-zinc-500">Participants</span>
+                      <span className="text-sm text-zinc-500">Total Tickets</span>
                     </div>
-                    <div className="text-2xl font-black">{currentDraw.participants.toLocaleString()}</div>
+                    <div className="text-2xl font-black">{roundLoading ? '...' : numberOfTickets}</div>
                   </div>
-
                   <div className="p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl">
                     <div className="flex items-center gap-3 mb-2">
                       <TrendingUp className="w-4 h-4 text-violet-400" />
-                      <span className="text-sm text-zinc-500">Days Until Draw</span>
+                      <span className="text-sm text-zinc-500">Time Left</span>
                     </div>
-                    <div className="text-2xl font-black">{currentDraw.daysLeft}</div>
+                    <div className="text-2xl font-black">{timeRemaining > 0 ? `${minutesRemaining}m` : 'Ended'}</div>
                   </div>
                 </div>
               </motion.div>
 
-              {/* Your Stats */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.3 }}
-                className="p-6 bg-zinc-900 border border-zinc-800 rounded-3xl"
-              >
-                <h3 className="text-lg font-black mb-4">Your Entry</h3>
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="p-6 bg-zinc-900 border border-zinc-800 rounded-3xl">
+                <h3 className="text-lg font-black mb-4">Your Selection</h3>
                 <div className="space-y-4">
-                  <div>
-                    <div className="text-sm text-zinc-500 mb-1">Tickets Purchasing</div>
-                    <div className="text-2xl font-black">{ticketCount}</div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-zinc-500 mb-1">Win Probability</div>
-                    <div className="text-2xl font-black">
-                      {((ticketCount / (currentDraw.participants + ticketCount)) * 100).toFixed(4)}%
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-zinc-500 mb-1">Potential Prize</div>
-                    <div className="text-2xl font-black">{currentDraw.prizePool.toFixed(2)} ETH</div>
-                  </div>
+                  <div><div className="text-sm text-zinc-500">Type</div><div className={`text-2xl font-black ${selectedType.textColor}`}>{selectedType.name}</div></div>
+                  <div><div className="text-sm text-zinc-500">Cost</div><div className="text-2xl font-black">{ticketCostFormatted.toFixed(2)} TFL</div></div>
+                  <div><div className="text-sm text-zinc-500">Multiplier</div><div className="text-2xl font-black">{selectedType.multiplier}x</div></div>
                 </div>
               </motion.div>
 
-              {/* Blockchain Info */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.4 }}
-                className="p-6 bg-zinc-900 border border-zinc-800 rounded-3xl"
-              >
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="p-6 bg-zinc-900 border border-zinc-800 rounded-3xl">
                 <h3 className="text-lg font-black mb-4">Powered By</h3>
                 <div className="space-y-3">
                   <div className="flex items-center gap-3 p-3 bg-zinc-800/50 border border-zinc-700 rounded-xl">
-                    <div className="w-8 h-8 rounded-lg bg-indigo-500/20 border border-indigo-500/20 flex items-center justify-center">
-                      <span className="text-xs font-black text-indigo-400">Ξ</span>
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold">Ethereum</div>
-                      <div className="text-xs text-zinc-500">Mainnet</div>
-                    </div>
+                    <div className="w-8 h-8 rounded-lg bg-indigo-500/20 border border-indigo-500/20 flex items-center justify-center"><span className="text-xs font-black text-indigo-400">Ξ</span></div>
+                    <div><div className="text-sm font-semibold">Ethereum Sepolia</div></div>
                   </div>
                   <div className="flex items-center gap-3 p-3 bg-zinc-800/50 border border-zinc-700 rounded-xl">
-                    <div className="w-8 h-8 rounded-lg bg-violet-500/20 border border-violet-500/20 flex items-center justify-center">
-                      <span className="text-xs font-black text-violet-400">CL</span>
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold">Chainlink VRF</div>
-                      <div className="text-xs text-zinc-500">Verifiable Randomness</div>
-                    </div>
+                    <div className="w-8 h-8 rounded-lg bg-violet-500/20 border border-violet-500/20 flex items-center justify-center"><span className="text-xs font-black text-violet-400">CL</span></div>
+                    <div><div className="text-sm font-semibold">Chainlink VRF v2.5</div></div>
                   </div>
                 </div>
               </motion.div>

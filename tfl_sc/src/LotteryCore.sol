@@ -131,7 +131,7 @@ abstract contract LotteryCore is LotteryConfig, LotteryVRF, ReentrancyGuard, Pau
         address _paymentToken,
         address _treasury,
         address _vrfCoordinator,
-        uint64 _subscriptionId,
+        uint256 _subscriptionId,  // uint256 pour VRF v2.5
         bytes32 _keyHash
     ) 
         LotteryConfig(_treasury)

@@ -69,6 +69,14 @@ export function Navigation({ currentPage, onNavigate }: NavigationProps) {
               >
                 Docs
               </button>
+              <button
+                onClick={() => onNavigate('contract-info')}
+                className={`text-sm transition-colors ${
+                  currentPage === 'contract-info' ? 'text-white' : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                📊 Contract
+              </button>
             </div>
           </div>
 

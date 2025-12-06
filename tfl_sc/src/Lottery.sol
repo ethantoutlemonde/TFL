@@ -89,14 +89,14 @@ contract Lottery is LotteryCore {
      * @param _paymentToken Adresse du token ERC20 utilisé pour les paris
      * @param _treasury Adresse de la trésorerie
      * @param _vrfCoordinator Adresse du coordinateur Chainlink VRF
-     * @param _subscriptionId ID de souscription Chainlink VRF
+     * @param _subscriptionId ID de souscription Chainlink VRF (uint256 pour v2.5)
      * @param _keyHash Key hash pour Chainlink VRF
      */
     constructor(
         address _paymentToken,
         address _treasury,
         address _vrfCoordinator,
-        uint64 _subscriptionId,
+        uint256 _subscriptionId,  // uint256 pour VRF v2.5
         bytes32 _keyHash
     ) LotteryCore(
         _paymentToken,

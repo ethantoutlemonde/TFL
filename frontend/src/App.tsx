@@ -7,8 +7,9 @@ import { WinnersPage } from "./pages/winners-page";
 import { DocsPage } from "./pages/docs-page";
 import { TicketDetailPage } from "./pages/ticket-detail-page";
 import { BuyTicketsPage } from "./pages/buy-tickets-page";
+import { ContractInfoPage } from "./pages/contract-info-page";
 
-export type PageType = 'home' | 'dashboard' | 'winners' | 'docs' | 'ticket-detail' | 'buy-tickets';
+export type PageType = 'home' | 'dashboard' | 'winners' | 'docs' | 'ticket-detail' | 'buy-tickets' | 'contract-info';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<PageType>('home');
@@ -36,6 +37,8 @@ export default function App() {
         return <WinnersPage />;
       case 'docs':
         return <DocsPage />;
+      case 'contract-info':
+        return <ContractInfoPage />;
       case 'ticket-detail':
         return <TicketDetailPage ticketId={selectedTicketId} onBack={() => navigateToPage('dashboard')} />;
       case 'buy-tickets':

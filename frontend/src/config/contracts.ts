@@ -27,6 +27,32 @@ export const SEPOLIA_CONFIG = {
   EXPLORER_URL: "https://sepolia.etherscan.io",
 };
 
+// Ethereum Mainnet
+export const MAINNET_CONFIG = {
+  chainId: 1,
+  chainName: "Ethereum Mainnet",
+  
+  // Contrat Lottery (VRF v2.5)
+  // TODO: Remplacer par l'adresse du contrat Lottery sur mainnet
+  LOTTERY_ADDRESS: "0x0000000000000000000000000000000000000000",
+  
+  // Token de paiement
+  // TODO: Remplacer par l'adresse du token sur mainnet
+  PAYMENT_TOKEN_ADDRESS: "0x0000000000000000000000000000000000000000",
+  PAYMENT_TOKEN_SYMBOL: "TFL",
+  PAYMENT_TOKEN_DECIMALS: 18,
+  
+  // VRF v2.5 Coordinator (mainnet)
+  VRF_COORDINATOR: "0xD7f86b4b8Cae7D942340FF628F82735b7a20893a",
+  VRF_SUBSCRIPTION_ID: "0", // TODO: Mettre ton Subscription ID
+  
+  // RPC (utiliser un RPC public ou configurer via variable d'environnement)
+  RPC_URL: "https://eth.rpc.blxrbdn.com",
+  
+  // Block Explorer
+  EXPLORER_URL: "https://etherscan.io",
+};
+
 // Config active (switch entre testnet et mainnet)
 export const ACTIVE_CONFIG = SEPOLIA_CONFIG;
 

@@ -50,7 +50,7 @@ contract DeployLottery is Script {
         address paymentToken = vm.envAddress("PAYMENT_TOKEN");
         address treasury = vm.envAddress("TREASURY");
         address vrfCoordinator = vm.envAddress("VRF_COORDINATOR");
-        uint64 subscriptionId = uint64(vm.envUint("VRF_SUBSCRIPTION_ID"));
+        uint256 subscriptionId = vm.envUint("VRF_SUBSCRIPTION_ID");  // uint256 pour VRF v2.5
         bytes32 keyHash = vm.envBytes32("VRF_KEY_HASH");
         
         console.log("=== DEPLOIEMENT LOTTERY ===");
