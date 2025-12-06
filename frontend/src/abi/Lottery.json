@@ -19,8 +19,8 @@
       },
       {
         "name": "_subscriptionId",
-        "type": "uint64",
-        "internalType": "uint64"
+        "type": "uint256",
+        "internalType": "uint256"
       },
       {
         "name": "_keyHash",
@@ -590,8 +590,8 @@
     "outputs": [
       {
         "name": "",
-        "type": "uint64",
-        "internalType": "uint64"
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -740,7 +740,7 @@
       {
         "name": "",
         "type": "address",
-        "internalType": "contract VRFCoordinatorV2Interface"
+        "internalType": "contract IVRFCoordinatorV2Plus"
       }
     ],
     "stateMutability": "view"
