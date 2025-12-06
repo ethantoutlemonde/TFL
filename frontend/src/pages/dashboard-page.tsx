@@ -209,7 +209,7 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
   }, [isConnected, currentRoundId]);
 
   const handleWithdraw = async () => {
-    if (parseFloat(pendingWinnings) > 0) {
+    if (hasPendingWinnings) {
       await withdraw();
     }
   };
@@ -220,6 +220,7 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
   const totalTickets = allPlayerTickets.length;
   const totalSpent = allPlayerTickets.reduce((sum: number, t: any) => sum + parseFloat(t.amount), 0);
   const pendingWinningsNum = parseFloat(pendingWinnings);
+  const hasPendingWinnings = pendingWinningsNum > 0;
 
   const stats = [
     {
@@ -277,50 +278,60 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
       </section>
 
       {/* Pending Winnings Banner */}
-      {pendingWinningsNum > 0 && (
-        <section className="relative py-4 px-6">
-          <div className="container mx-auto max-w-7xl">
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="p-6 bg-gradient-to-r from-green-500/20 to-cyan-500/20 border border-green-500/30 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4"
+      <section className="relative py-4 px-6">
+        <div className="container mx-auto max-w-7xl">
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`p-6 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 transition-colors ${
+              hasPendingWinnings
+                ? 'bg-gradient-to-r from-green-500/20 to-cyan-500/20 border border-green-500/30'
+                : 'bg-zinc-900/70 border border-zinc-800'
+            }`}
+          >
+            <div className="flex items-center gap-4">
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                hasPendingWinnings ? 'bg-green-500/20' : 'bg-zinc-800'
+              }`}>
+                <Coins className={`w-6 h-6 ${hasPendingWinnings ? 'text-green-400' : 'text-zinc-500'}`} />
+              </div>
+              <div>
+                <div className={`text-lg font-bold ${hasPendingWinnings ? 'text-green-400' : 'text-zinc-300'}`}>
+                  {hasPendingWinnings
+                    ? `You have ${pendingWinningsNum.toFixed(4)} TFL to withdraw!`
+                    : 'No winnings available yet'}
+                </div>
+                <div className="text-sm text-zinc-400">
+                  {hasPendingWinnings ? 'Claim your winnings now' : 'Play rounds to unlock your winnings'}
+                </div>
+              </div>
+            </div>
+            <motion.button
+              onClick={handleWithdraw}
+              disabled={withdrawLoading || !hasPendingWinnings}
+              className={`px-8 py-3 rounded-full font-bold transition-all ${
+                hasPendingWinnings
+                  ? 'bg-gradient-to-r from-green-500 to-cyan-500 text-black hover:from-green-400 hover:to-cyan-400 shadow-lg shadow-green-500/20'
+                  : 'bg-zinc-800 text-zinc-500 border border-zinc-700 cursor-not-allowed'
+              }`}
+              whileHover={hasPendingWinnings ? { scale: 1.08 } : undefined}
+              whileTap={hasPendingWinnings ? { scale: 0.95 } : undefined}
             >
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
-                  <Coins className="w-6 h-6 text-green-400" />
-                </div>
-                <div>
-                  <div className="text-lg font-bold text-green-400">
-                    You have {pendingWinningsNum.toFixed(4)} TFL to withdraw!
-                  </div>
-                  <div className="text-sm text-zinc-400">
-                    Claim your winnings now
-                  </div>
-                </div>
-              </div>
-              <motion.button
-                onClick={handleWithdraw}
-                disabled={withdrawLoading}
-                className="px-8 py-3 bg-gradient-to-r from-green-500 to-cyan-500 text-black font-bold rounded-full hover:from-green-400 hover:to-cyan-400 transition-all shadow-lg shadow-green-500/20 disabled:opacity-50"
-                whileHover={{ scale: 1.08 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                {withdrawLoading ? (
-                  <>
-                    <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin inline-block mr-2" />
-                    Withdrawing...
-                  </>
-                ) : 'Withdraw Now'}
-              </motion.button>
-            </motion.div>
-            {withdrawSuccess && withdrawHash && (
-              <div className="mt-2 text-center text-sm text-green-400">
-                ✓ Withdrawal successful! Tx: {withdrawHash.slice(0, 10)}...
-              </div>
-            )}
-          </div>
-        </section>
-      )}
+              {withdrawLoading ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin inline-block mr-2" />
+                  Withdrawing...
+                </>
+              ) : hasPendingWinnings ? 'Withdraw Now' : 'Nothing to withdraw'}
+            </motion.button>
+          </motion.div>
+          {withdrawSuccess && withdrawHash && (
+            <div className="mt-2 text-center text-sm text-green-400">
+              ✓ Withdrawal successful! Tx: {withdrawHash.slice(0, 10)}...
+            </div>
+          )}
+        </div>
+      </section>
 
       {/* Stats Grid */}
       <section className="relative py-12 px-6">
@@ -343,22 +354,27 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.6, delay: index * 0.1 }}
                   className={`p-6 rounded-2xl transition-all ${
-                    isWinningsStat && pendingWinningsNum > 0
+                    isWinningsStat && hasPendingWinnings
                       ? 'bg-gradient-to-br from-green-500/20 to-cyan-500/20 border border-green-500/30 cursor-pointer hover:border-green-500/50'
                       : 'bg-zinc-900 border border-zinc-800 hover:border-zinc-700'
                   }`}
-                  onClick={isWinningsStat && pendingWinningsNum > 0 ? handleWithdraw : undefined}
+                  onClick={isWinningsStat && hasPendingWinnings ? handleWithdraw : undefined}
                 >
                   <div className={`w-12 h-12 rounded-xl ${colors.bg} border ${colors.border} flex items-center justify-center mb-4`}>
                     <stat.icon className={`w-6 h-6 ${colors.text}`} />
                   </div>
                   <div className="text-sm text-zinc-500 mb-1">{stat.label}</div>
-                  <div className={`text-2xl font-black ${isWinningsStat && pendingWinningsNum > 0 ? 'text-green-400' : ''}`}>
+                  <div className={`text-2xl font-black ${isWinningsStat && hasPendingWinnings ? 'text-green-400' : ''}`}>
                     {isLoading ? '...' : stat.value}
                   </div>
-                  {isWinningsStat && pendingWinningsNum > 0 && (
+                  {isWinningsStat && hasPendingWinnings && (
                     <div className="mt-3 text-xs text-green-400/75 font-semibold">
                       Click to withdraw
+                    </div>
+                  )}
+                  {isWinningsStat && !hasPendingWinnings && !isLoading && (
+                    <div className="mt-3 text-xs text-zinc-500">
+                      No winnings yet
                     </div>
                   )}
                 </motion.div>
