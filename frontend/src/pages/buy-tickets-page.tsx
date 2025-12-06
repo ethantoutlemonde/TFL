@@ -138,7 +138,7 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
                   {TICKET_TYPES.map((type) => (
                     <motion.button
                       key={type.id}
-                      onClick={() => setSelectedTicketType(type.id)}
+                      onClick={() => setSelectedTicketType(type.id)} //the user must selects the ticket type 
                       className={`relative p-6 rounded-2xl border-2 transition-all text-left ${selectedTicketType === type.id ? `${type.bgColor} ${type.borderColor}` : 'bg-zinc-800/50 border-zinc-700 hover:border-zinc-600'}`}
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
@@ -155,7 +155,7 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
                           <div className="text-sm text-zinc-500">{type.multiplier}x multiplier</div>
                         </div>
                       </div>
-                      <div className="text-2xl font-black">{isLoading ? '...' : `${(parseFloat(ticketPrice) * type.multiplier).toFixed(2)} TFL`}</div>
+                      <div className="text-2xl font-black">{isLoading ? '...' : `${(parseFloat(ticketPrice) * type.multiplier).toFixed(2)} `}</div>
                     </motion.button>
                   ))}
                 </div>
@@ -164,14 +164,14 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <Coins className="w-5 h-5 text-indigo-400" />
-                      <span className="text-zinc-400">Your TFL Balance</span>
+                      <span className="text-zinc-400">Your USDC Balance</span>
                     </div>
                     <span className={`font-bold ${hasEnoughBalance ? 'text-green-400' : 'text-red-400'}`}>
-                      {isLoading ? '...' : `${parseFloat(balanceFormatted).toFixed(4)} TFL`}
+                      {isLoading ? '...' : `${parseFloat(balanceFormatted).toFixed(4)} USDC`}
                     </span>
                   </div>
                   {!hasEnoughBalance && !isLoading && (
-                    <div className="mt-2 text-sm text-red-400">Insufficient balance. Need {ticketCostFormatted.toFixed(2)} TFL.</div>
+                    <div className="mt-2 text-sm text-red-400">Insufficient balance. Need {ticketCostFormatted.toFixed(2)} USDC.</div>
                   )}
                 </div>
 
@@ -180,7 +180,7 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
                     <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
                     <div className="text-sm text-amber-200/90">
                       <p className="font-semibold mb-1">Approval Required</p>
-                      <p>Approve the lottery contract to spend your TFL tokens.</p>
+                      <p>Approve the lottery contract to spend your USDC tokens.</p>
                     </div>
                   </div>
                 )}
@@ -200,7 +200,7 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
                   ) : buySuccess ? (
                     <><Check className="w-5 h-5" />Purchased!</>
                   ) : needsApproval ? (
-                    <><Check className="w-5 h-5" />Approve TFL</>
+                    <><Check className="w-5 h-5" />Approve USDC</>
                   ) : (
                     <><ShoppingCart className="w-5 h-5" />Buy {selectedType.name}</>
                   )}
@@ -231,7 +231,7 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
                 <div className="text-sm text-zinc-500 mb-2 tracking-wider uppercase">Round #{currentRoundId}</div>
                 <h3 className="text-3xl font-black mb-6">Prize Pool</h3>
                 <div className="text-4xl font-black mb-2 bg-gradient-to-r from-white to-zinc-400 bg-clip-text text-transparent">{roundLoading ? '...' : totalPrize}</div>
-                <div className="text-xl text-zinc-400 mb-6">TFL</div>
+                <div className="text-xl text-zinc-400 mb-6">USDC</div>
                 <div className="space-y-4">
                   <div className="p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl">
                     <div className="flex items-center gap-3 mb-2">
@@ -254,7 +254,7 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
                 <h3 className="text-lg font-black mb-4">Your Selection</h3>
                 <div className="space-y-4">
                   <div><div className="text-sm text-zinc-500">Type</div><div className={`text-2xl font-black ${selectedType.textColor}`}>{selectedType.name}</div></div>
-                  <div><div className="text-sm text-zinc-500">Cost</div><div className="text-2xl font-black">{ticketCostFormatted.toFixed(2)} TFL</div></div>
+                  <div><div className="text-sm text-zinc-500">Cost</div><div className="text-2xl font-black">{ticketCostFormatted.toFixed(2)} USDC</div></div>
                   <div><div className="text-sm text-zinc-500">Multiplier</div><div className="text-2xl font-black">{selectedType.multiplier}x</div></div>
                 </div>
               </motion.div>
