@@ -301,11 +301,16 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
               <motion.button
                 onClick={handleWithdraw}
                 disabled={withdrawLoading}
-                className="px-8 py-3 bg-green-500 text-black font-bold rounded-xl hover:bg-green-400 transition-colors disabled:opacity-50"
-                whileHover={{ scale: 1.05 }}
+                className="px-8 py-3 bg-gradient-to-r from-green-500 to-cyan-500 text-black font-bold rounded-full hover:from-green-400 hover:to-cyan-400 transition-all shadow-lg shadow-green-500/20 disabled:opacity-50"
+                whileHover={{ scale: 1.08 }}
                 whileTap={{ scale: 0.95 }}
               >
-                {withdrawLoading ? 'Withdrawing...' : 'Withdraw Now'}
+                {withdrawLoading ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin inline-block mr-2" />
+                    Withdrawing...
+                  </>
+                ) : 'Withdraw Now'}
               </motion.button>
             </motion.div>
             {withdrawSuccess && withdrawHash && (
@@ -329,21 +334,33 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
                 green: { bg: 'bg-green-500/10', border: 'border-green-500/20', text: 'text-green-400' },
               };
               const colors = colorClasses[stat.color] || colorClasses.indigo;
+              const isWinningsStat = stat.label === "Pending Winnings";
+              
               return (
                 <motion.div
                   key={index}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.6, delay: index * 0.1 }}
-                  className="p-6 bg-zinc-900 border border-zinc-800 rounded-2xl hover:border-zinc-700 transition-all"
+                  className={`p-6 rounded-2xl transition-all ${
+                    isWinningsStat && pendingWinningsNum > 0
+                      ? 'bg-gradient-to-br from-green-500/20 to-cyan-500/20 border border-green-500/30 cursor-pointer hover:border-green-500/50'
+                      : 'bg-zinc-900 border border-zinc-800 hover:border-zinc-700'
+                  }`}
+                  onClick={isWinningsStat && pendingWinningsNum > 0 ? handleWithdraw : undefined}
                 >
                   <div className={`w-12 h-12 rounded-xl ${colors.bg} border ${colors.border} flex items-center justify-center mb-4`}>
                     <stat.icon className={`w-6 h-6 ${colors.text}`} />
                   </div>
                   <div className="text-sm text-zinc-500 mb-1">{stat.label}</div>
-                  <div className="text-2xl font-black">
+                  <div className={`text-2xl font-black ${isWinningsStat && pendingWinningsNum > 0 ? 'text-green-400' : ''}`}>
                     {isLoading ? '...' : stat.value}
                   </div>
+                  {isWinningsStat && pendingWinningsNum > 0 && (
+                    <div className="mt-3 text-xs text-green-400/75 font-semibold">
+                      Click to withdraw
+                    </div>
+                  )}
                 </motion.div>
               );
             })}
