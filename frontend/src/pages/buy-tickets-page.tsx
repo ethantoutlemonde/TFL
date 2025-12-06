@@ -11,15 +11,23 @@ interface BuyTicketsPageProps {
   onSuccess: () => void;
 }
 
-const TICKET_TYPES = [
-  { id: 1, name: 'Bronze', multiplier: 1, bgColor: 'bg-amber-500/10', borderColor: 'border-amber-500/20', textColor: 'text-amber-400' },
-  { id: 2, name: 'Silver', multiplier: 2, bgColor: 'bg-zinc-500/10', borderColor: 'border-zinc-400/20', textColor: 'text-zinc-300' },
-  { id: 3, name: 'Gold', multiplier: 5, bgColor: 'bg-yellow-500/10', borderColor: 'border-yellow-500/20', textColor: 'text-yellow-400' },
-  { id: 4, name: 'Diamond', multiplier: 10, bgColor: 'bg-cyan-500/10', borderColor: 'border-cyan-500/20', textColor: 'text-cyan-400' },
+const QUANTITIES = [
+  { id: 1, name: 'Bronze', multiplier: 1, emoji: '🥉' },
+  { id: 2, name: 'Silver', multiplier: 2, emoji: '🥈' },
+  { id: 3, name: 'Gold', multiplier: 5, emoji: '🥇' },
+  { id: 4, name: 'Diamond', multiplier: 10, emoji: '💎' },
+  { id: 5, name: 'Platinum', multiplier: 15, emoji: '👑' },
+  { id: 6, name: 'Legend', multiplier: 20, emoji: '✨' },
+];
+
+const CHOICE_TYPES = [
+  { id: 1, name: 'Pile', emoji: '🎯' },
+  { id: 2, name: 'Face', emoji: '🎲' },
 ];
 
 export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
-  const [selectedTicketType, setSelectedTicketType] = useState(1);
+  const [selectedQuantity, setSelectedQuantity] = useState(1);
+  const [selectedChoice, setSelectedChoice] = useState(1);
   const [needsApproval, setNeedsApproval] = useState(true);
   const { account, isConnecting } = useWallet();
   const address = account ? (account as `0x${string}`) : undefined;
@@ -34,9 +42,11 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
   const { approve, isPending: approveLoading, isSuccess: approveSuccess } = useApproveToken();
   const { buyTicket, isPending: buyLoading, isSuccess: buySuccess, hash: buyHash } = useBuyTicket();
 
-  const selectedType = TICKET_TYPES.find(t => t.id === selectedTicketType) || TICKET_TYPES[0];
-  const ticketCost = ticketPriceRaw ? ticketPriceRaw * BigInt(selectedType.multiplier) : 0n;
-  const ticketCostFormatted = ticketPriceRaw ? parseFloat(ticketPrice) * selectedType.multiplier : 0;
+  const selectedQuantityObj = QUANTITIES.find(q => q.id === selectedQuantity) || QUANTITIES[0];
+  const selectedChoiceObj = CHOICE_TYPES.find(c => c.id === selectedChoice) || CHOICE_TYPES[0];
+  
+  const ticketCost = ticketPriceRaw ? ticketPriceRaw * BigInt(selectedQuantityObj.multiplier) : 0n;
+  const ticketCostFormatted = ticketPriceRaw ? parseFloat(ticketPrice) * selectedQuantityObj.multiplier : 0;
 
   useEffect(() => {
     if (allowanceRaw !== undefined && ticketCost > 0n) {
@@ -61,7 +71,7 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
       const approvalAmount = parseUnits('1000000', 18);
       await approve(approvalAmount);
     } else {
-      await buyTicket(selectedTicketType);
+      await buyTicket(selectedChoice, selectedQuantityObj.multiplier);
     }
   };
 
@@ -187,7 +197,7 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
 
                 <motion.button
                   onClick={handlePurchase}
-                  disabled={isPurchasing || !hasEnoughBalance || buySuccess}
+                  disabled={isPurchasing || approveLoading || !hasEnoughBalance || buySuccess}
                   className="w-full flex items-center justify-center gap-3 px-8 py-5 bg-white text-black rounded-2xl font-black hover:bg-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
@@ -202,7 +212,7 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
                   ) : needsApproval ? (
                     <><Check className="w-5 h-5" />Approve USDC</>
                   ) : (
-                    <><ShoppingCart className="w-5 h-5" />Buy {selectedType.name}</>
+                    <><ShoppingCart className="w-5 h-5" />Buy Ticket</>
                   )}
                 </motion.button>
 

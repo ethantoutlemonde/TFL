@@ -137,11 +137,9 @@ contract BuyTicketsWithParams is Script {
             token.approve(lotteryAddress, type(uint256).max);
         }
         
-        // Acheter les tickets un par un (buyTicket = 1 ticket)
-        for (uint256 i = 0; i < nbTickets; i++) {
-            lottery.buyTicket(camp);
-            console.log("Ticket", i + 1, "purchased!");
-        }
+        // Acheter tous les tickets en une seule transaction
+        lottery.buyTicket(camp, nbTickets);
+        console.log("Purchased", nbTickets, "tickets!");
         
         vm.stopBroadcast();
         

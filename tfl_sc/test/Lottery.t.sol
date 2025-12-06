@@ -96,7 +96,7 @@ contract LotteryTest is Test {
         vm.prank(player1);
         vm.expectEmit(true, true, false, true);
         emit TicketPurchased(roundId, player1, 1, TICKET_PRICE);
-        lottery.buyTicket(1);
+        lottery.buyTicket(1, 1);
 
         // Vérifier que le token a été transféré
         assertEq(token.balanceOf(player1), balanceBefore - TICKET_PRICE);
@@ -117,35 +117,35 @@ contract LotteryTest is Test {
     function testCanBuyMultipleTicketsSameType() public {
         // Nouveau comportement : on peut acheter plusieurs tickets du MÊME type
         vm.startPrank(player1);
-        lottery.buyTicket(1);
+        lottery.buyTicket(1, 1);
         
         // Deuxième achat du MÊME type - doit réussir
-        lottery.buyTicket(1);
+        lottery.buyTicket(1, 1);
         
         // MAIS pas un type différent
         vm.expectRevert(AlreadyHasTicket.selector);
-        lottery.buyTicket(2);
+        lottery.buyTicket(2, 1);
         vm.stopPrank();
     }
 
     function testCannotBuyDifferentTicketType() public {
         vm.startPrank(player1);
-        lottery.buyTicket(1);
+        lottery.buyTicket(1, 1);
 
         // Tenter d'acheter un type DIFFÉRENT
         vm.expectRevert(AlreadyHasTicket.selector);
-        lottery.buyTicket(2);
+        lottery.buyTicket(2, 1);
         vm.stopPrank();
     }
 
     function testCannotBuyInvalidTicketType() public {
         vm.prank(player1);
         vm.expectRevert(InvalidTicketType.selector);
-        lottery.buyTicket(0); // Type 0 invalide
+        lottery.buyTicket(0, 1); // Type 0 invalide
 
         vm.prank(player1);
         vm.expectRevert(InvalidTicketType.selector);
-        lottery.buyTicket(7); // Type 7 invalide (max est 6 avec setLotteryOption(2))
+        lottery.buyTicket(7, 1); // Type 7 invalide (max est 6 avec setLotteryOption(2))
     }
 
     function testCannotBuyAfterRoundEnds() public {
@@ -154,7 +154,7 @@ contract LotteryTest is Test {
 
         vm.prank(player1);
         vm.expectRevert(RoundNotActive.selector);
-        lottery.buyTicket(1);
+        lottery.buyTicket(1, 1);
     }
 
     // ========== TESTS DES POOLS ==========
@@ -164,17 +164,17 @@ contract LotteryTest is Test {
 
         // Player1 et Player2 achètent camp 1
         vm.prank(player1);
-        lottery.buyTicket(1);
+        lottery.buyTicket(1, 1);
         vm.prank(player2);
-        lottery.buyTicket(1);
+        lottery.buyTicket(1, 1);
 
         // Player3 achète camp 2
         vm.prank(player3);
-        lottery.buyTicket(2);
+        lottery.buyTicket(2, 1);
 
         // Player4 achète camp 3
         vm.prank(player4);
-        lottery.buyTicket(3);
+        lottery.buyTicket(3, 1);
 
         // Vérifier les pools
         (,,,,, uint256 totalTickets, uint256[] memory pools, uint256[] memory counts) = lottery.getRoundInfo(roundId);
@@ -192,7 +192,7 @@ contract LotteryTest is Test {
 
     function testCloseRoundAndRequestRandomness() public {
         vm.prank(player1);
-        lottery.buyTicket(1);
+        lottery.buyTicket(1, 1);
 
         // Avancer le temps
         vm.warp(block.timestamp + ROUND_DURATION + 1);
@@ -218,21 +218,21 @@ contract LotteryTest is Test {
 
         // Player1 achète 2x sur camp 1
         vm.startPrank(player1);
-        lottery.buyTicket(1);
-        lottery.buyTicket(1);
+        lottery.buyTicket(1, 1);
+        lottery.buyTicket(1, 1);
         vm.stopPrank();
         
         // Player2 achète 2x sur camp 1
         vm.startPrank(player2);
-        lottery.buyTicket(1);
-        lottery.buyTicket(1);
+        lottery.buyTicket(1, 1);
+        lottery.buyTicket(1, 1);
         vm.stopPrank();
 
         // Player3 achète 3x sur camp 2 (perdant)
         vm.startPrank(player3);
-        lottery.buyTicket(2);
-        lottery.buyTicket(2);
-        lottery.buyTicket(2);
+        lottery.buyTicket(2, 1);
+        lottery.buyTicket(2, 1);
+        lottery.buyTicket(2, 1);
         vm.stopPrank();
 
         // Avancer le temps et fermer le round
@@ -262,9 +262,9 @@ contract LotteryTest is Test {
 
         // Seulement camp 1 et camp 2 ont des tickets
         vm.prank(player1);
-        lottery.buyTicket(1);
+        lottery.buyTicket(1, 1);
         vm.prank(player2);
-        lottery.buyTicket(2);
+        lottery.buyTicket(2, 1);
 
         uint256 totalPool = TICKET_PRICE * 2;
 
@@ -280,8 +280,10 @@ contract LotteryTest is Test {
         // (2 % 6) + 1 = 3
         vrfCoordinator.fulfillRandomWords(vrfRequestId, address(lottery));
 
-        // Vérifier que tout va à la trésorerie (car le camp 3 gagnant n'a pas de joueurs)
-        assertEq(lottery.treasuryBalance(), totalPool);
+        // NEW: Vérifier que tout va à carryoverPool (Option 2: Jackpot accumulation)
+        // Au lieu d'aller à la trésorerie, l'argent s'accumule pour le prochain round
+        assertEq(lottery.carryoverPool(), totalPool);
+        assertEq(lottery.treasuryBalance(), 0);
         assertEq(lottery.withdrawable(player1), 0);
         assertEq(lottery.withdrawable(player2), 0);
     }
@@ -291,13 +293,13 @@ contract LotteryTest is Test {
 
         // Remplir tous les camps pour garantir qu'un gagnant existe
         vm.prank(player1);
-        lottery.buyTicket(1);
+        lottery.buyTicket(1, 1);
         vm.prank(player2);
-        lottery.buyTicket(2);
+        lottery.buyTicket(2, 1);
         vm.prank(player3);
-        lottery.buyTicket(3);
+        lottery.buyTicket(3, 1);
         vm.prank(player4);
-        lottery.buyTicket(4);
+        lottery.buyTicket(4, 1);
 
         // Finaliser
         vm.warp(block.timestamp + ROUND_DURATION + 1);
@@ -329,8 +331,8 @@ contract LotteryTest is Test {
             assertEq(token.balanceOf(winner), balanceBefore + withdrawableAmount);
             assertEq(lottery.withdrawable(winner), 0);
         } else {
-            // Si aucun gagnant (camps 5 ou 6), tout va à la trésorerie
-            assertTrue(lottery.treasuryBalance() > 0, "Treasury should have balance");
+            // NEW: Si aucun gagnant (camps 5 ou 6), l'argent va à carryoverPool (Option 2)
+            assertTrue(lottery.carryoverPool() > 0, "Carryover should have balance");
         }
     }
     function testCannotWithdrawWithoutWinnings() public {
@@ -342,10 +344,15 @@ contract LotteryTest is Test {
     function testWithdrawTreasury() public {
         uint256 roundId = lottery.currentRoundId();
 
-        vm.prank(player1);
-        lottery.buyTicket(1);
-        vm.prank(player2);
-        lottery.buyTicket(2);
+        // Remplir TOUS les camps avec plusieurs joueurs pour garantir un gagnant avec frais > 0
+        for (uint256 i = 0; i < 10; i++) {
+            vm.prank(player1);
+            lottery.buyTicket(1, 1);
+        }
+        for (uint256 i = 0; i < 10; i++) {
+            vm.prank(player2);
+            lottery.buyTicket(2, 1);
+        }
 
         // Finaliser
         vm.warp(block.timestamp + ROUND_DURATION + 1);
@@ -355,13 +362,20 @@ contract LotteryTest is Test {
         vrfCoordinator.fulfillRandomWords(vrfRequestId, address(lottery));
 
         uint256 treasuryAmount = lottery.treasuryBalance();
-        uint256 balanceBefore = token.balanceOf(treasury);
+        
+        // Si nous avons des frais (gagnant trouvé)
+        if (treasuryAmount > 0) {
+            uint256 balanceBefore = token.balanceOf(treasury);
+            
+            // Owner retire la trésorerie
+            lottery.withdrawTreasury();
 
-        // Owner retire la trésorerie
-        lottery.withdrawTreasury();
-
-        assertEq(token.balanceOf(treasury), balanceBefore + treasuryAmount);
-        assertEq(lottery.treasuryBalance(), 0);
+            assertEq(token.balanceOf(treasury), balanceBefore + treasuryAmount);
+            assertEq(lottery.treasuryBalance(), 0);
+        } else {
+            // Pas de gagnant = argent va à carryover
+            assertTrue(lottery.carryoverPool() > 0, "Carryover should have balance");
+        }
     }
 
     // ========== TESTS DES FONCTIONS ADMIN ==========
@@ -404,12 +418,12 @@ contract LotteryTest is Test {
         
         vm.prank(player1);
         vm.expectRevert();  // Pausable revert, peu importe le message exact
-        lottery.buyTicket(1);
+        lottery.buyTicket(1, 1);
 
         lottery.unpause();
         
         vm.prank(player1);
-        lottery.buyTicket(1); // Devrait fonctionner
+        lottery.buyTicket(1, 1); // Devrait fonctionner
     }
 
     // ========== TESTS DE NOUVEAU ROUND ==========
@@ -418,7 +432,7 @@ contract LotteryTest is Test {
         uint256 firstRoundId = lottery.currentRoundId();
         
         vm.prank(player1);
-        lottery.buyTicket(1);
+        lottery.buyTicket(1, 1);
 
         // Finaliser le premier round
         vm.warp(block.timestamp + ROUND_DURATION + 1);
@@ -438,7 +452,7 @@ contract LotteryTest is Test {
     function testCanBuyTicketInNewRound() public {
         // Finaliser le premier round
         vm.prank(player1);
-        lottery.buyTicket(1);
+        lottery.buyTicket(1, 1);
         
         uint256 firstRoundId = lottery.currentRoundId();
         
@@ -451,7 +465,7 @@ contract LotteryTest is Test {
         // Acheter un ticket dans le nouveau round
         uint256 newRoundId = lottery.currentRoundId();
         vm.prank(player1);
-        lottery.buyTicket(2); // Player1 peut acheter à nouveau
+        lottery.buyTicket(2, 1); // Player1 peut acheter à nouveau
 
         assertEq(lottery.getUserTicket(newRoundId, player1), 2);
     }
@@ -464,19 +478,19 @@ contract LotteryTest is Test {
         // Test des achats multiples du MÊME type
         // Player1 achète 3x sur camp 1 = 15 tokens
         vm.startPrank(player1);
-        lottery.buyTicket(1);
-        lottery.buyTicket(1);
-        lottery.buyTicket(1);
+        lottery.buyTicket(1, 1);
+        lottery.buyTicket(1, 1);
+        lottery.buyTicket(1, 1);
         vm.stopPrank();
         
         // Player2 achète 1x sur camp 1 = 5 tokens (total gagnant = 20)
         vm.prank(player2);
-        lottery.buyTicket(1);
+        lottery.buyTicket(1, 1);
         
         // Player3 achète 2x sur camp 2 = 10 tokens (perdant)
         vm.startPrank(player3);
-        lottery.buyTicket(2);
-        lottery.buyTicket(2);
+        lottery.buyTicket(2, 1);
+        lottery.buyTicket(2, 1);
         vm.stopPrank();
 
         // Vérifier les achats
@@ -531,9 +545,9 @@ contract LotteryTest is Test {
             
             // Achats
             vm.prank(player1);
-            lottery.buyTicket(1);
+            lottery.buyTicket(1, 1);
             vm.prank(player2);
-            lottery.buyTicket(2);
+            lottery.buyTicket(2, 1);
             
             // Finalisation
             vm.warp(block.timestamp + ROUND_DURATION + 1);
