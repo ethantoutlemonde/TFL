@@ -26,7 +26,8 @@ const CHOICE_TYPES = [
 export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
   const [selectedQuantity, setSelectedQuantity] = useState(1);
   const [selectedChoice, setSelectedChoice] = useState(1);
-  const [needsApproval, setNeedsApproval] = useState(true);
+  const [needsApproval, setNeedsApproval] = useState<boolean | null>(null);
+  const [isCheckingApproval, setIsCheckingApproval] = useState(false);
   const { account, isConnecting } = useWallet();
   const address = account ? (account as `0x${string}`) : undefined;
   const isConnected = !!account;
@@ -35,7 +36,6 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
   const { endTime, numberOfTickets, totalPrize, isLoading: roundLoading } = useRoundInfo(currentRoundId);
   
   const { balance: balanceRaw, balanceFormatted, isLoading: balanceLoading } = useTokenBalance(address);
-  const { allowance: allowanceRaw, isLoading: allowanceLoading, refetch: refetchAllowance } = useTokenAllowance(address);
   
   const { approve, isPending: approveLoading, isSuccess: approveSuccess } = useApproveToken();
   const { buyTicket, isPending: buyLoading, isSuccess: buySuccess, hash: buyHash } = useBuyTicket();
@@ -46,9 +46,15 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
   const ticketCost = ticketPriceRaw ? ticketPriceRaw * BigInt(selectedQuantityObj.multiplier) : 0n;
   const ticketCostFormatted = ticketPriceRaw ? parseFloat(ticketPrice) * selectedQuantityObj.multiplier : 0;
 
+  // Fetch allowance only when user tries to purchase
+  const { allowance: allowanceRaw, isLoading: allowanceLoading, refetch: refetchAllowance } = useTokenAllowance(
+    isCheckingApproval ? address : undefined
+  );
+
   useEffect(() => {
     if (allowanceRaw !== undefined && ticketCost > 0n) {
       setNeedsApproval(allowanceRaw < ticketCost);
+      setIsCheckingApproval(false);
     }
   }, [allowanceRaw, ticketCost]);
 
@@ -65,6 +71,12 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
   }, [buySuccess, onSuccess]);
 
   const handlePurchase = async () => {
+    // Check approval only when clicking purchase
+    if (needsApproval === null) {
+      setIsCheckingApproval(true);
+      return;
+    }
+
     if (needsApproval) {
       const approvalAmount = parseUnits('1000000', 18);
       await approve(approvalAmount);
@@ -74,8 +86,8 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
   };
 
   const hasEnoughBalance = balanceRaw !== undefined && ticketCost > 0n && balanceRaw >= ticketCost;
-  const isLoading = lotteryLoading || roundLoading || balanceLoading || allowanceLoading;
-  const isPurchasing = approveLoading || buyLoading;
+  const isLoading = lotteryLoading || roundLoading || balanceLoading;
+  const isPurchasing = approveLoading || buyLoading || isCheckingApproval || allowanceLoading;
 
   const now = Math.floor(Date.now() / 1000);
   const timeRemaining = Math.max(0, endTime - now);
@@ -233,7 +245,7 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
                   )}
                 </div>
 
-                {needsApproval && hasEnoughBalance && (
+                {needsApproval === true && hasEnoughBalance && (
                   <div className="flex items-start gap-3 p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl mb-6">
                     <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
                     <div className="text-sm text-amber-200/90">
@@ -245,19 +257,24 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
 
                 <motion.button
                   onClick={handlePurchase}
-                  disabled={isPurchasing || approveLoading || !hasEnoughBalance || buySuccess}
+                  disabled={isPurchasing || !hasEnoughBalance || buySuccess}
                   className="w-full flex items-center justify-center gap-3 px-8 py-5 bg-white text-black rounded-2xl font-black hover:bg-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                 >
-                  {isPurchasing ? (
+                  {isCheckingApproval ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin" />
+                      Checking...
+                    </>
+                  ) : isPurchasing ? (
                     <>
                       <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin" />
                       {approveLoading ? 'Approving...' : 'Purchasing...'}
                     </>
                   ) : buySuccess ? (
                     <><Check className="w-5 h-5" />Purchased!</>
-                  ) : needsApproval ? (
+                  ) : needsApproval === true ? (
                     <><Check className="w-5 h-5" />Approve USDC</>
                   ) : (
                     <><ShoppingCart className="w-5 h-5" />Buy Ticket</>
