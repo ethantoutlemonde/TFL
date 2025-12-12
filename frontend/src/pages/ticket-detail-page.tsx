@@ -2,70 +2,10 @@
 
 import { motion } from "motion/react";
 import { ArrowLeft, ExternalLink, Calendar, Clock, CheckCircle, Ticket, Copy, Check } from "lucide-react";
-import { useState } from "react";
-
-const ticketData = [
-  {
-    id: 1,
-    drawNumber: 48,
-    ticketNumber: "TKT-0x742d...a9f3",
-    fullTicketId: "TKT-0x742d35Cc6634C0532925a3b844Bc9e7595f38a9f3",
-    purchaseDate: "Oct 1, 2025 12:34 PM",
-    status: "active",
-    amount: 0.01,
-    drawDate: "Oct 15, 2025 00:00 AM",
-    txHash: "0x1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z",
-    blockNumber: 18234567,
-    fromAddress: "0x742d35Cc6634C0532925a3b844Bc9e7595f38a9f3",
-    contractAddress: "0x271682DEB8C4E0901D1a1550aD2e64D568E69909",
-  },
-  {
-    id: 2,
-    drawNumber: 48,
-    ticketNumber: "TKT-0x8f1c...b2e7",
-    fullTicketId: "TKT-0x8f1c29Dd4512A9532821b6c833Fc9d7584f21b2e7",
-    purchaseDate: "Oct 1, 2025 03:22 PM",
-    status: "active",
-    amount: 0.01,
-    drawDate: "Oct 15, 2025 00:00 AM",
-    txHash: "0x2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a",
-    blockNumber: 18234589,
-    fromAddress: "0x742d35Cc6634C0532925a3b844Bc9e7595f38a9f3",
-    contractAddress: "0x271682DEB8C4E0901D1a1550aD2e64D568E69909",
-  },
-  {
-    id: 3,
-    drawNumber: 47,
-    ticketNumber: "TKT-0x3a9e...c4d1",
-    fullTicketId: "TKT-0x3a9e47Bb2839E9123745a1d922Ae8c6391d03c4d1",
-    purchaseDate: "Sep 10, 2025 08:15 AM",
-    status: "completed",
-    amount: 0.01,
-    drawDate: "Sep 15, 2025 00:00 AM",
-    result: "lost",
-    txHash: "0x3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b",
-    blockNumber: 18134567,
-    fromAddress: "0x742d35Cc6634C0532925a3b844Bc9e7595f38a9f3",
-    contractAddress: "0x271682DEB8C4E0901D1a1550aD2e64D568E69909",
-    winnerAddress: "0x742d35Cc6634C0532925a3b844Bc9e7595f38a9f3",
-  },
-  {
-    id: 4,
-    drawNumber: 46,
-    ticketNumber: "TKT-0x6d2f...e8a5",
-    fullTicketId: "TKT-0x6d2f83Ee9421F8534612c4e731Bf7d4982a14e8a5",
-    purchaseDate: "Aug 28, 2025 06:45 PM",
-    status: "completed",
-    amount: 0.01,
-    drawDate: "Sep 1, 2025 00:00 AM",
-    result: "lost",
-    txHash: "0x4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c",
-    blockNumber: 18034567,
-    fromAddress: "0x742d35Cc6634C0532925a3b844Bc9e7595f38a9f3",
-    contractAddress: "0x271682DEB8C4E0901D1a1550aD2e64D568E69909",
-    winnerAddress: "0x8f1c29Dd4512A9532821b6c833Fc9d7584f21b2e7",
-  },
-];
+import { useMemo, useState } from "react";
+import { useWallet } from "../hooks/useWallet";
+import { useRoundInfo, usePlayerAllTickets } from "../hooks/useLotteryData";
+import { LOTTERY_ADDRESS, ACTIVE_CONFIG } from "../config/contracts";
 
 interface TicketDetailPageProps {
   ticketId: number | null;
@@ -74,14 +14,21 @@ interface TicketDetailPageProps {
 
 export function TicketDetailPage({ ticketId, onBack }: TicketDetailPageProps) {
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  
-  const ticket = ticketData.find(t => t.id === ticketId);
+  const { account } = useWallet();
+  const address = account ? (account as `0x${string}`) : undefined;
+  const roundId = ticketId ?? 0;
 
-  if (!ticket) {
+  const { startTime, endTime, isActive, isFinalized, winningTicketType, totalTickets, isLoading: roundLoading } = useRoundInfo(roundId);
+  const { tickets, isLoading: ticketsLoading } = usePlayerAllTickets(address, roundId);
+
+  // Since dashboard passes roundId, we fetch player's ticket for that round
+  const playerTicket = useMemo(() => (tickets && tickets.length > 0 ? tickets[0] : undefined), [tickets]);
+
+  if (!playerTicket && !roundLoading && !ticketsLoading) {
     return (
       <div className="min-h-screen pt-20 flex items-center justify-center">
         <div className="text-center">
-          <p className="text-zinc-400 mb-4">Ticket not found</p>
+          <p className="text-zinc-400 mb-4">No ticket found for this round</p>
           <button
             onClick={onBack}
             className="text-indigo-400 hover:text-indigo-300 transition-colors"
@@ -127,11 +74,11 @@ export function TicketDetailPage({ ticketId, onBack }: TicketDetailPageProps) {
               <span className="text-sm text-zinc-400">Ticket Details</span>
             </div>
             <h1 className="text-4xl md:text-6xl font-black tracking-tighter mb-6">
-              {ticket.ticketNumber}
+              {playerTicket ? `Round #${playerTicket.roundId} — ${playerTicket.ticketType === 1 ? 'Pile' : 'Face'}` : `Round #${roundId}`}
             </h1>
 
             {/* Status badge */}
-            {ticket.status === 'active' ? (
+            {isActive && !isFinalized ? (
               <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-full">
                 <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
                 <span className="text-sm text-green-400 font-semibold tracking-wider uppercase">
@@ -169,9 +116,9 @@ export function TicketDetailPage({ ticketId, onBack }: TicketDetailPageProps) {
                   <div>
                     <div className="text-sm text-zinc-500 mb-2 tracking-wider uppercase">Full Ticket ID</div>
                     <div className="flex items-center justify-between p-4 bg-zinc-800/50 border border-zinc-700 rounded-xl">
-                      <code className="text-sm font-mono text-zinc-300 break-all">{ticket.fullTicketId}</code>
+                      <code className="text-sm font-mono text-zinc-300 break-all">{playerTicket ? `${playerTicket.roundId}-${playerTicket.ticketType}-${playerTicket.quantity}` : `${roundId}`}</code>
                       <button
-                        onClick={() => copyToClipboard(ticket.fullTicketId, 'ticketId')}
+                        onClick={() => copyToClipboard(playerTicket ? `${playerTicket.roundId}-${playerTicket.ticketType}-${playerTicket.quantity}` : `${roundId}`, 'ticketId')}
                         className="ml-4 flex-shrink-0"
                       >
                         {copiedField === 'ticketId' ? (
@@ -187,14 +134,14 @@ export function TicketDetailPage({ ticketId, onBack }: TicketDetailPageProps) {
                     <div>
                       <div className="text-sm text-zinc-500 mb-2 tracking-wider uppercase">Draw Number</div>
                       <div className="p-4 bg-zinc-800/50 border border-zinc-700 rounded-xl">
-                        <div className="text-lg font-semibold">#{ticket.drawNumber}</div>
+                        <div className="text-lg font-semibold">#{roundId}</div>
                       </div>
                     </div>
 
                     <div>
                       <div className="text-sm text-zinc-500 mb-2 tracking-wider uppercase">Amount Paid</div>
                       <div className="p-4 bg-zinc-800/50 border border-zinc-700 rounded-xl">
-                        <div className="text-lg font-semibold">{ticket.amount} ETH</div>
+                        <div className="text-lg font-semibold">{playerTicket ? `${playerTicket.amount} ${ACTIVE_CONFIG.PAYMENT_TOKEN_SYMBOL}` : '-'}</div>
                       </div>
                     </div>
 
@@ -202,7 +149,7 @@ export function TicketDetailPage({ ticketId, onBack }: TicketDetailPageProps) {
                       <div className="text-sm text-zinc-500 mb-2 tracking-wider uppercase">Purchase Date</div>
                       <div className="p-4 bg-zinc-800/50 border border-zinc-700 rounded-xl flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-zinc-400" />
-                        <div className="text-sm font-semibold">{ticket.purchaseDate}</div>
+                        <div className="text-sm font-semibold">{startTime ? new Date(startTime * 1000).toLocaleString() : '-'}</div>
                       </div>
                     </div>
 
@@ -210,7 +157,7 @@ export function TicketDetailPage({ ticketId, onBack }: TicketDetailPageProps) {
                       <div className="text-sm text-zinc-500 mb-2 tracking-wider uppercase">Draw Date</div>
                       <div className="p-4 bg-zinc-800/50 border border-zinc-700 rounded-xl flex items-center gap-2">
                         <Clock className="w-4 h-4 text-zinc-400" />
-                        <div className="text-sm font-semibold">{ticket.drawDate}</div>
+                        <div className="text-sm font-semibold">{endTime ? new Date(endTime * 1000).toLocaleString() : '-'}</div>
                       </div>
                     </div>
                   </div>
@@ -227,12 +174,12 @@ export function TicketDetailPage({ ticketId, onBack }: TicketDetailPageProps) {
                 <h2 className="text-2xl font-black mb-6">Blockchain Information</h2>
                 
                 <div className="space-y-6">
-                  <div>
+                  {/* <div>
                     <div className="text-sm text-zinc-500 mb-2 tracking-wider uppercase">Transaction Hash</div>
                     <div className="flex items-center justify-between p-4 bg-zinc-800/50 border border-zinc-700 rounded-xl">
-                      <code className="text-xs font-mono text-zinc-300 break-all">{ticket.txHash}</code>
+                      <code className="text-xs font-mono text-zinc-300 break-all">-</code>
                       <button
-                        onClick={() => copyToClipboard(ticket.txHash, 'txHash')}
+                        onClick={() => copyToClipboard('-', 'txHash')}
                         className="ml-4 flex-shrink-0"
                       >
                         {copiedField === 'txHash' ? (
@@ -242,14 +189,14 @@ export function TicketDetailPage({ ticketId, onBack }: TicketDetailPageProps) {
                         )}
                       </button>
                     </div>
-                  </div>
+                  </div> */}
 
                   <div>
                     <div className="text-sm text-zinc-500 mb-2 tracking-wider uppercase">From Address</div>
                     <div className="flex items-center justify-between p-4 bg-zinc-800/50 border border-zinc-700 rounded-xl">
-                      <code className="text-sm font-mono text-zinc-300 break-all">{ticket.fromAddress}</code>
+                      <code className="text-sm font-mono text-zinc-300 break-all">{address ?? '-'}</code>
                       <button
-                        onClick={() => copyToClipboard(ticket.fromAddress, 'fromAddress')}
+                        onClick={() => copyToClipboard(address ?? '-', 'fromAddress')}
                         className="ml-4 flex-shrink-0"
                       >
                         {copiedField === 'fromAddress' ? (
@@ -264,9 +211,9 @@ export function TicketDetailPage({ ticketId, onBack }: TicketDetailPageProps) {
                   <div>
                     <div className="text-sm text-zinc-500 mb-2 tracking-wider uppercase">Contract Address</div>
                     <div className="flex items-center justify-between p-4 bg-zinc-800/50 border border-zinc-700 rounded-xl">
-                      <code className="text-sm font-mono text-zinc-300 break-all">{ticket.contractAddress}</code>
+                      <code className="text-sm font-mono text-zinc-300 break-all">{LOTTERY_ADDRESS}</code>
                       <button
-                        onClick={() => copyToClipboard(ticket.contractAddress, 'contractAddress')}
+                        onClick={() => copyToClipboard(LOTTERY_ADDRESS, 'contractAddress')}
                         className="ml-4 flex-shrink-0"
                       >
                         {copiedField === 'contractAddress' ? (
@@ -278,15 +225,15 @@ export function TicketDetailPage({ ticketId, onBack }: TicketDetailPageProps) {
                     </div>
                   </div>
 
-                  <div>
+                  {/* <div>
                     <div className="text-sm text-zinc-500 mb-2 tracking-wider uppercase">Block Number</div>
                     <div className="p-4 bg-zinc-800/50 border border-zinc-700 rounded-xl">
-                      <div className="text-lg font-semibold">{ticket.blockNumber.toLocaleString()}</div>
+                      <div className="text-lg font-semibold">-</div>
                     </div>
-                  </div>
+                  </div> */}
 
                   <motion.a
-                    href="#"
+                    href={`${ACTIVE_CONFIG.EXPLORER_URL}/address/${LOTTERY_ADDRESS}`}
                     className="flex items-center justify-center gap-2 w-full px-6 py-4 bg-zinc-800 border border-zinc-700 rounded-xl hover:bg-zinc-700 transition-colors"
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
@@ -298,7 +245,7 @@ export function TicketDetailPage({ ticketId, onBack }: TicketDetailPageProps) {
               </motion.div>
 
               {/* Result Card (if completed) */}
-              {ticket.status === 'completed' && (
+              {isFinalized && (
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -311,28 +258,18 @@ export function TicketDetailPage({ ticketId, onBack }: TicketDetailPageProps) {
                     <div>
                       <div className="text-sm text-zinc-500 mb-2 tracking-wider uppercase">Status</div>
                       <div className="p-4 bg-zinc-800/50 border border-zinc-700 rounded-xl">
-                        <div className="text-lg font-semibold text-zinc-400">Not Won</div>
+                        <div className="text-lg font-semibold text-zinc-400">{playerTicket && winningTicketType === playerTicket.ticketType ? 'Won' : 'Not Won'}</div>
                       </div>
                     </div>
 
-                    {ticket.winnerAddress && (
+                    {/* {winningTicketType > 0 && (
                       <div>
                         <div className="text-sm text-zinc-500 mb-2 tracking-wider uppercase">Winner Address</div>
-                        <div className="flex items-center justify-between p-4 bg-zinc-800/50 border border-zinc-700 rounded-xl">
-                          <code className="text-sm font-mono text-zinc-300 break-all">{ticket.winnerAddress}</code>
-                          <button
-                            onClick={() => copyToClipboard(ticket.winnerAddress!, 'winnerAddress')}
-                            className="ml-4 flex-shrink-0"
-                          >
-                            {copiedField === 'winnerAddress' ? (
-                              <Check className="w-4 h-4 text-green-400" />
-                            ) : (
-                              <Copy className="w-4 h-4 text-zinc-400 hover:text-white transition-colors" />
-                            )}
-                          </button>
+                        <div className="p-4 bg-zinc-800/50 border border-zinc-700 rounded-xl">
+                          <div className="text-lg font-semibold">{winningTicketType === 1 ? 'Pile' : 'Face'}</div>
                         </div>
                       </div>
-                    )}
+                    )} */}
                   </div>
                 </motion.div>
               )}
@@ -350,18 +287,18 @@ export function TicketDetailPage({ ticketId, onBack }: TicketDetailPageProps) {
                   <Ticket className="w-8 h-8 text-indigo-400" />
                 </div>
                 <h3 className="text-xl font-black mb-4">Ticket Status</h3>
-                {ticket.status === 'active' ? (
+                {isActive && !isFinalized ? (
                   <p className="text-sm text-zinc-400 mb-6">
-                    Your ticket is active and entered in the upcoming draw. Winner will be selected on {ticket.drawDate}.
+                    Your ticket is active and entered in the upcoming draw. Winner will be selected on {endTime ? new Date(endTime * 1000).toLocaleString() : '-'}.
                   </p>
                 ) : (
                   <p className="text-sm text-zinc-400 mb-6">
-                    This draw has been completed. The winner was announced on {ticket.drawDate}.
+                    This draw has been completed. The winner was announced on {endTime ? new Date(endTime * 1000).toLocaleString() : '-'}.
                   </p>
                 )}
                 <div className="p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl">
                   <div className="text-xs text-zinc-500 mb-1">Your Entry</div>
-                  <div className="text-lg font-black">Confirmed</div>
+                  <div className="text-lg font-black">{playerTicket ? 'Confirmed' : 'No Entry'}</div>
                 </div>
               </motion.div>
 
