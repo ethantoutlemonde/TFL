@@ -147,7 +147,8 @@ export function usePlayerWinnings(playerAddress: string | undefined) {
   const { data, isLoading, error, refetch } = useReadContract({
     address: LOTTERY_ADDRESS as `0x${string}`,
     abi: LotteryABI,
-    functionName: 'pendingWithdrawals',
+    // Contract exposes withdrawable mapping for player balances
+    functionName: 'withdrawable',
     args: playerAddress ? [playerAddress as `0x${string}`] : undefined,
     query: {
       enabled: !!playerAddress,

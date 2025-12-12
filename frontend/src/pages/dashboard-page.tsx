@@ -2,15 +2,17 @@
 
 import { motion } from "motion/react";
 import { useEffect } from "react";
+import { useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { Ticket, TrendingUp, Trophy, Calendar, ExternalLink, Clock, Wallet, AlertCircle, Coins } from "lucide-react";
 import { useWallet } from '../hooks/useWallet';
 import { 
   useLotteryInfo, 
   usePlayerHistoricalTickets,
   usePlayerWinnings,
-  useWithdraw,
   useRoundInfo
 } from '../hooks/useLotteryData';
+import LotteryABI from "../abi/Lottery.json";
+import { LOTTERY_ADDRESS } from "../config/contracts";
 
 interface DashboardPageProps {
   onViewTicket: (ticketId: number) => void;
@@ -197,8 +199,9 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
   // Récupérer les gains du joueur
   const { pendingWinnings, isLoading: winningsLoading, refetch: refetchWinnings } = usePlayerWinnings(address);
   
-  // Hook pour retirer les gains
-  const { withdraw, isPending: withdrawLoading, isSuccess: withdrawSuccess, hash: withdrawHash } = useWithdraw();
+  // Hook pour retirer les gains via ABI
+  const { writeContract, data: withdrawHash, isPending: withdrawPending } = useWriteContract();
+  const { isLoading: withdrawConfirming, isSuccess: withdrawSuccess } = useWaitForTransactionReceipt({ hash: withdrawHash });
 
   // Refetch tickets au chargement de la page
   useEffect(() => {
@@ -209,9 +212,12 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
   }, [isConnected, currentRoundId]);
 
   const handleWithdraw = async () => {
-    if (hasPendingWinnings) {
-      await withdraw();
-    }
+    if (!hasPendingWinnings) return;
+    await writeContract({
+      address: LOTTERY_ADDRESS as `0x${string}`,
+      abi: LotteryABI,
+      functionName: 'withdraw',
+    });
   };
 
   // Filtrer les tickets actifs et passés
@@ -250,6 +256,7 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
   ];
 
   const isLoading = lotteryLoading || ticketsLoading || winningsLoading;
+  const isWithdrawing = withdrawPending || withdrawConfirming;
 
   return (
     <div className="min-h-screen pt-20">
@@ -308,7 +315,7 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
             </div>
             <motion.button
               onClick={handleWithdraw}
-              disabled={withdrawLoading || !hasPendingWinnings}
+              disabled={isWithdrawing || !hasPendingWinnings}
               className={`px-8 py-3 rounded-full font-bold transition-all ${
                 hasPendingWinnings
                   ? 'bg-gradient-to-r from-green-500 to-cyan-500 text-black hover:from-green-400 hover:to-cyan-400 shadow-lg shadow-green-500/20'
@@ -317,7 +324,7 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
               whileHover={hasPendingWinnings ? { scale: 1.08 } : undefined}
               whileTap={hasPendingWinnings ? { scale: 0.95 } : undefined}
             >
-              {withdrawLoading ? (
+              {isWithdrawing ? (
                 <>
                   <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin inline-block mr-2" />
                   Withdrawing...
