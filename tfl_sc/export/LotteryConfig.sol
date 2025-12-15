@@ -33,7 +33,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  *   → Toutes protégées par onlyOwner
  * 
  * AVANTAGES :
- * ===========
+ * ==========
  * - Séparation des responsabilités (config ≠ logique)
  * - Facile de modifier les paramètres sans toucher au core
  * - Les propriétés métier héritent de cette config
@@ -138,7 +138,7 @@ abstract contract LotteryConfig is Ownable {
      * @notice Modifier la durée d'un round
      */
     function setRoundDuration(uint256 newDuration) external onlyOwner {
-        if (newDuration < 3600) revert InvalidLotteryOption(); // Min 1h
+        if (newDuration == 0) revert InvalidLotteryOption();
         roundDuration = newDuration;
     }
 
@@ -151,17 +151,17 @@ abstract contract LotteryConfig is Ownable {
     }
 
     /**
-     * @notice Activer/désactiver une option
+     * @notice Activer ou désactiver une option
      */
-    function setOptionActive(uint8 optionId, bool active) external onlyOwner {
+    function setOptionStatus(uint8 optionId, bool isActive) external onlyOwner {
         if (optionId < 1 || optionId > 3) revert InvalidLotteryOption();
         
         if (optionId == 1) {
-            option2Camps.isActive = active;
+            option2Camps.isActive = isActive;
         } else if (optionId == 2) {
-            option6Camps.isActive = active;
+            option6Camps.isActive = isActive;
         } else {
-            optionRandom.isActive = active;
+            optionRandom.isActive = isActive;
         }
     }
 }

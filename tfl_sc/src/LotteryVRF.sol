@@ -7,7 +7,7 @@ import {Round, VRFRequestNotFound, RoundAlreadyFinalized} from "./LotteryTypes.s
 
 /**
  * @title LotteryVRF
- * @notice 🎲 INTÉGRATION VRF v2.5 - Gère la randomité via Chainlink VRF
+ * @notice Intégration VRF v2.5 - gère la randomité via Chainlink VRF
  * 
  * RÔLE DU FICHIER :
  * =================
@@ -17,21 +17,21 @@ import {Round, VRFRequestNotFound, RoundAlreadyFinalized} from "./LotteryTypes.s
  * 
  * VERSION VRF v2.5 :
  * ==================
- * ⚠️  Cette version utilise VRF v2.5 avec subscriptionId en uint256
- *     (au lieu de uint64 pour VRF v2 classique)
+ * Attention : cette version utilise VRF v2.5 avec subscriptionId en uint256
+ *             (au lieu de uint64 pour VRF v2 classique)
  * 
- * 1️⃣  CONSTANTS IMMUABLES (déployement uniquement)
+ * 1. CONSTANTS IMMUABLES (déploiement uniquement)
  *   - vrfCoordinator : adresse du coordinateur Chainlink
  *   - subscriptionId : ID de la subscription (uint256 pour v2.5)
  *   - keyHash : paramètre réseau (gas lane)
  *   → Marquées immutable = pas modifiables après déploiement
  * 
- * 2️⃣  DEMANDER DE LA RANDOMITÉ
+ * 2. DEMANDER DE LA RANDOMITÉ
  *   - _requestRandomness(uint256 roundId) : fonction interne
  *   → Demande 1 nombre aléatoire au coordinateur Chainlink
  *   → Le réseau va appeler rawFulfillRandomWords() plus tard
  * 
- * 3️⃣  RECEVOIR LA RÉPONSE (Callback)
+ * 3. RECEVOIR LA RÉPONSE (callback)
  *   - rawFulfillRandomWords() : callback Chainlink (entry point)
  *   - fulfillRandomWords() : traitement interne
  *   → Appelé automatiquement par Chainlink 3 blocs après la demande
@@ -40,23 +40,23 @@ import {Round, VRFRequestNotFound, RoundAlreadyFinalized} from "./LotteryTypes.s
  * 
  * PATTERN UTILISÉ :
  * =================
- * ✅ ADAPTER PATTERN : LotteryVRF adapte Chainlink à notre interface
- * ✅ TEMPLATE METHOD : fulfillRandomWords appelle _handleRandomWords()
- *                      (défini dans LotteryCore)
- * ✅ IMMUTABLE CONSTANTS : Sécurité + économie de gas
- * ✅ INTERNAL FUNCTIONS : Logique cachée, interface claire
+ * - Adapter pattern : LotteryVRF adapte Chainlink à notre interface
+ * - Template method : fulfillRandomWords appelle _handleRandomWords()
+ *                     (défini dans LotteryCore)
+ * - Immutable constants : sécurité + économie de gas
+ * - Internal functions : logique cachée, interface claire
  * 
  * AVANTAGES :
  * ===========
- * ✅ Si on change de fournisseur VRF, c'est un fichier à modifier
- * ✅ LotteryCore ne voit pas la complexité Chainlink
- * ✅ Facile à tester avec mock du coordinateur
- * ✅ Sécurité : on contrôle exactement quand VRF est appelé
+ * - Si on change de fournisseur VRF, c'est un fichier à modifier
+ * - LotteryCore ne voit pas la complexité Chainlink
+ * - Facile à tester avec mock du coordinateur
+ * - Sécurité : on contrôle exactement quand VRF est appelé
  * 
  * IMPORTE QUI ? :
  * ===============
- * ✅ LotteryCore (hérite de LotteryVRF)
- * ✅ Lottery (hérite indirectement via LotteryCore)
+ * - LotteryCore (hérite de LotteryVRF)
+ * - Lottery (hérite indirectement via LotteryCore)
  */
 abstract contract LotteryVRF {
     

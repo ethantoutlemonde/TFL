@@ -340,7 +340,7 @@ export function BuyTicketsPage({ onSuccess }: BuyTicketsPageProps) {
                       {selectedChoiceObj.name}
                     </div>
                   </div>
-                  <div><div className="text-sm text-zinc-500">Total Cost</div><div className="text-2xl font-black text-green-400">{ticketCostFormatted.toFixed(2)} TFL</div></div>
+                  <div><div className="text-sm text-zinc-500">Total Cost</div><div className="text-2xl font-black text-green-400">{ticketCostFormatted.toFixed(2)} USDC</div></div>
                 </div>
               </motion.div>
 

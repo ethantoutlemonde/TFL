@@ -238,13 +238,13 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
     {
       icon: TrendingUp,
       label: "Total Spent",
-      value: `${totalSpent.toFixed(2)} TFL`,
+      value: `${totalSpent.toFixed(2)} USDC`,
       color: "violet",
     },
     {
       icon: Trophy,
       label: "Pending Winnings",
-      value: `${pendingWinningsNum.toFixed(2)} TFL`,
+      value: `${pendingWinningsNum.toFixed(2)} USDC`,
       color: "cyan",
     },
     {
@@ -305,7 +305,7 @@ export function DashboardPage({ onViewTicket, onBuyTickets }: DashboardPageProps
               <div>
                 <div className={`text-lg font-bold ${hasPendingWinnings ? 'text-green-400' : 'text-zinc-300'}`}>
                   {hasPendingWinnings
-                    ? `You have ${pendingWinningsNum.toFixed(4)} TFL to withdraw!`
+                    ? `You have ${pendingWinningsNum.toFixed(4)} USDC to withdraw!`
                     : 'No winnings available yet'}
                 </div>
                 <div className="text-sm text-zinc-400">
